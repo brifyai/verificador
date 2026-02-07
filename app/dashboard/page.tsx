@@ -2,15 +2,17 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Plus, Radio as RadioIcon } from 'lucide-react';
+import { Plus, Radio as RadioIcon, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { RunPodControl } from '@/components/RunPodControl';
+import Swal from 'sweetalert2';
 
 export default function DashboardPage() {
   const [radios, setRadios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newRadio, setNewRadio] = useState({ name: '', address: '', url: '' });
+  const [userRole, setUserRole] = useState<string>('user');
 
   useEffect(() => {
     fetchRadios();
@@ -20,16 +22,84 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from('radios')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+    // Determine role
+    const role = user.user_metadata?.role || 'user';
+    setUserRole(role);
+
+    let query = supabase.from('radios').select('*');
+    
+    // If not admin/super_admin, only show own radios
+    if (role !== 'admin' && role !== 'super_admin') {
+        query = query.eq('user_id', user.id);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) toast.error('Error al cargar radios');
     else setRadios(data || []);
     setLoading(false);
   };
+
+  const handleDeleteRadio = async (e: React.MouseEvent, radio: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const result = await Swal.fire({
+      title: '¿Estás seguro?',
+      text: `Estás a punto de eliminar la radio "${radio.name}". Esto eliminará PERMANENTEMENTE todas las verificaciones asociadas, archivos en Drive y registros en la base de datos.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        Swal.fire({
+            title: 'Eliminando...',
+            text: 'Por favor espere mientras se eliminan los recursos.',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const res = await fetch('/api/radios/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({ radioId: radio.id })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Error al eliminar');
+
+        Swal.fire(
+          '¡Eliminado!',
+          'La radio y sus datos han sido eliminados.',
+          'success'
+        );
+
+        // Refresh list
+        fetchRadios();
+
+      } catch (error: any) {
+        Swal.fire(
+          'Error',
+          'Hubo un problema al eliminar la radio: ' + error.message,
+          'error'
+        );
+      }
+    }
+  };
+
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,7 +136,7 @@ export default function DashboardPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Mis Radios</h1>
         <div className="flex items-center gap-4">
-            <RunPodControl />
+            {userRole === 'super_admin' && <RunPodControl />}
             <button
             onClick={() => setShowCreate(!showCreate)}
             className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
@@ -154,10 +224,19 @@ export default function DashboardPage() {
                     <dt className="text-sm font-medium text-gray-500 truncate">
                       {radio.address}
                     </dt>
-                    <dd className="flex items-baseline">
+                    <dd className="flex items-baseline justify-between">
                       <div className="text-xl font-semibold text-gray-900">
                         {radio.name}
                       </div>
+                      {(userRole === 'admin' || userRole === 'super_admin') && (
+                          <button
+                            onClick={(e) => handleDeleteRadio(e, radio)}
+                            className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-50 transition-colors"
+                            title="Eliminar radio"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                       )}
                     </dd>
                   </div>
                 </div>

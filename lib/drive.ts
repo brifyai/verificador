@@ -69,3 +69,16 @@ export const getFileStream = async (fileId: string, refreshToken: string) => {
     throw err;
   }
 };
+
+export const deleteDriveFile = async (fileId: string, refreshToken: string) => {
+  const drive = getDriveClient(refreshToken);
+  try {
+    await drive.files.delete({
+      fileId,
+    });
+    return true;
+  } catch (err) {
+    console.error('Error deleting Drive file:', err);
+    throw err;
+  }
+};

@@ -37,6 +37,19 @@ const whisperAgent = new Agent({
   bodyTimeout: 20 * 60 * 1000, // 20 minutes
 });
 
+// Helper to format seconds to MM:SS or HH:MM:SS
+const formatTime = (seconds: number) => {
+  if (!seconds && seconds !== 0) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
   
@@ -289,6 +302,10 @@ export async function POST(req: NextRequest) {
         // 2. Transcribir con RunPod API
         sendProgress(30, "Iniciando transcripción con IA (RunPod)...");
 
+        if (!process.env.RUNPOD) {
+            throw new Error("Error de configuración: La variable de entorno RUNPOD no está definida en el servidor.");
+        }
+
         const runResponse = await fetch('https://api.runpod.ai/v2/4skn4uyl6f6guu/run', {
           method: 'POST',
           headers: {
@@ -407,9 +424,9 @@ export async function POST(req: NextRequest) {
           1. Busca cada una de las FRASES A BUSCAR en el CONTEXTO.
           2. IMPORTANTE: Las frases pueden estar divididas en múltiples segmentos consecutivos. Debes buscar a través de los límites de los segmentos.
           3. Si el usuario proporciona una frase larga, busca la secuencia de palabras independientemente de si está en uno o varios segmentos.
-          4. Extrae el 'start' y 'end' del segmento (o rango de segmentos) donde aparece la frase.
+          4. Extrae el 'start' y 'end' EXACTOS (en segundos, números) del segmento (o rango de segmentos) donde aparece la frase.
           5. Si la frase abarca varios segmentos, usa el start del primero y el end del último.
-          6. Convierte los tiempos (que están en segundos, ej: 125.5) a formato "MM:SS" (ej: "02:05").
+          6. NO conviertas los tiempos a formato "MM:SS", devuélvelos como números (ej: 125.5).
           7. Sé flexible con errores menores de transcripción (ej: "diversion" vs "dibersión") o puntuación.
           8. Prioriza encontrar la ubicación correcta (timestamps) aunque el texto transcrito tenga ligeras variaciones.
           9. DEBES devolver UN objeto en el array por CADA frase buscada, incluso si no se encuentra. Si no se encuentra, pon "is_match": false.
@@ -421,8 +438,8 @@ export async function POST(req: NextRequest) {
               "is_match": boolean, 
               "transcription": "Texto encontrado en el segmento (o vacío si no se encontró)",
               "validation_rate": "High" | "Medium" | "Low",
-              "timestamp_start": "MM:SS (o vacío si no se encontró)",
-              "timestamp_end": "MM:SS (o vacío si no se encontró)",
+              "start_seconds": number (segundos exactos del inicio, ej: 1395.5, o null si no se encontró),
+              "end_seconds": number (segundos exactos del final, ej: 1401.2, o null si no se encontró),
               "details": "Explica la coincidencia encontrada o por qué no se encontró."
             }
           ]
@@ -432,7 +449,14 @@ export async function POST(req: NextRequest) {
 
         const responseText = result.response.text();
         const jsonString = responseText.replace(/```json|```/g, '').trim();
-        const analysis = JSON.parse(jsonString);
+        const rawAnalysis = JSON.parse(jsonString);
+        
+        // Post-process to format times
+        const analysis = rawAnalysis.map((item: any) => ({
+            ...item,
+            timestamp_start: item.start_seconds ? formatTime(item.start_seconds) : "",
+            timestamp_end: item.end_seconds ? formatTime(item.end_seconds) : ""
+        }));
         
         sendProgress(98, "Análisis completado. Guardando resultados...");
 
