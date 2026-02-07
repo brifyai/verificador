@@ -1,0 +1,422 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { model } from '@/lib/gemini';
+import { Agent } from 'undici';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { promisify } from 'util';
+import { toggleRunPodServer } from '@/lib/runpod-control';
+
+// Configure ffmpeg
+const ffmpegBinary = ffmpegPath || path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
+const validFfmpegPath = ffmpegBinary.startsWith('\\ROOT') 
+  ? path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe') 
+  : ffmpegBinary;
+
+ffmpeg.setFfmpegPath(validFfmpegPath);
+console.log("Using ffmpeg path:", validFfmpegPath);
+
+const writeFile = promisify(fs.writeFile);
+const unlink = promisify(fs.unlink);
+const readFile = promisify(fs.readFile);
+
+// Custom agent with higher timeout for Whisper API
+const whisperAgent = new Agent({
+  headersTimeout: 20 * 60 * 1000, // 20 minutes
+  connectTimeout: 60 * 1000, // 1 minute
+  bodyTimeout: 20 * 60 * 1000, // 20 minutes
+});
+
+export async function POST(req: NextRequest) {
+  const encoder = new TextEncoder();
+  
+  const stream = new ReadableStream({
+    async start(controller) {
+      let tempInputPath = '';
+      let tempOutputPath = '';
+      let lockAcquired = false;
+
+      const sendProgress = (percentage: number, message: string) => {
+        try {
+            const data = JSON.stringify({ type: 'progress', percentage, message });
+            controller.enqueue(encoder.encode(data + '\n'));
+        } catch(e) { console.error("Error sending progress", e); }
+      };
+
+      const sendResult = (data: any) => {
+        try {
+            const json = JSON.stringify({ type: 'result', data });
+            controller.enqueue(encoder.encode(json + '\n'));
+        } catch(e) { console.error("Error sending result", e); }
+      };
+      
+      const sendError = (message: string) => {
+        try {
+            const json = JSON.stringify({ type: 'error', error: message });
+            controller.enqueue(encoder.encode(json + '\n'));
+        } catch(e) { console.error("Error sending error", e); }
+      };
+
+      try {
+        // Acquire Lock for RunPod
+        sendProgress(5, "Iniciando sistema y adquiriendo recursos...");
+        
+        const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+        const supabaseAdmin = getSupabaseAdmin();
+        const { data: currentCount, error: lockError } = await supabaseAdmin.rpc('acquire_lock', { resource_id: 'runpod_whisper' });
+        
+        if (!lockError) {
+            lockAcquired = true;
+            console.log(`[Lock] Acquired. Count: ${currentCount}`);
+        } else {
+            console.error("Lock acquisition failed:", lockError);
+        }
+
+        // Determine if it's JSON (for Drive files) or FormData (for uploads)
+        const contentType = req.headers.get('content-type') || '';
+        
+        let audioFile: File | null = null;
+        let phrases: string[] = [];
+        let radioId = '';
+        let driveFileId: string | undefined = undefined;
+        
+        if (contentType.includes('application/json')) {
+            const body = await req.json();
+            phrases = body.phrases;
+            radioId = body.radioId;
+            driveFileId = body.driveFileId;
+        } else {
+            const formData = await req.formData();
+            audioFile = formData.get('audio') as File;
+            const phrasesJson = formData.get('phrases') as string;
+            radioId = formData.get('radioId') as string;
+            phrases = JSON.parse(phrasesJson);
+        }
+
+        if ((!audioFile && !driveFileId) || !phrases || phrases.length === 0 || !radioId) {
+            throw new Error('Faltan campos requeridos (audio o frases)');
+        }
+
+        let base64Audio = '';
+        let uploadedAudioPath: string | null = null;
+        
+        // Helper for compression
+        const compressAudio = async (inputBuffer: Buffer, fileName: string = 'audio.mp3'): Promise<Buffer> => {
+           const tempDir = os.tmpdir();
+           const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+           const ext = fileName.split('.').pop() || 'mp3';
+           const tempInputPathLocal = path.join(tempDir, `input-${uniqueSuffix}.${ext}`);
+           const tempOutputPathLocal = path.join(tempDir, `output-${uniqueSuffix}.mp3`);
+
+           // Store paths for cleanup in finally block (if needed, though we clean inside this func too)
+           // But since these are local to this helper, we clean them here.
+
+           try {
+             await writeFile(tempInputPathLocal, inputBuffer);
+
+             await new Promise((resolve, reject) => {
+               ffmpeg(tempInputPathLocal)
+                 .audioFrequency(16000)
+                 .audioChannels(1)
+                 .audioBitrate('32k')
+                 .output(tempOutputPathLocal)
+                 .on('end', resolve)
+                 .on('error', reject)
+                 .run();
+             });
+
+             const compressedBuffer = await readFile(tempOutputPathLocal);
+             console.log(`Compressed size: ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+             
+             await unlink(tempInputPathLocal).catch(console.error);
+             await unlink(tempOutputPathLocal).catch(console.error);
+
+             return compressedBuffer;
+           } catch (error) {
+             if (fs.existsSync(tempInputPathLocal)) await unlink(tempInputPathLocal).catch(() => {});
+             if (fs.existsSync(tempOutputPathLocal)) await unlink(tempOutputPathLocal).catch(() => {});
+             throw error;
+           }
+        };
+
+        if (driveFileId) {
+            sendProgress(10, "Descargando archivo desde Google Drive...");
+            
+            // Get user for credentials
+            const authHeader = req.headers.get('Authorization');
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabaseServer = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              {
+                global: { headers: { Authorization: authHeader || '' } },
+              }
+            );
+            const { data: { user } } = await supabaseServer.auth.getUser();
+            
+            if (!user) throw new Error('No autorizado');
+
+            // Fetch Global Refresh Token
+            const { data: settingsData } = await supabaseAdmin
+                .from('system_settings')
+                .select('value')
+                .eq('key', 'google_refresh_token')
+                .single();
+
+            if (!settingsData?.value) {
+                throw new Error('Google Drive del sistema no conectado');
+            }
+
+            // Fetch file from Drive
+            const { getFileStream } = await import('@/lib/drive');
+            const stream = await getFileStream(driveFileId, settingsData.value);
+            
+            const chunks: any[] = [];
+            for await (const chunk of stream) {
+                chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+            console.log(`Loaded file from Drive: ${driveFileId}, size: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
+
+            sendProgress(20, "Procesando audio de Drive...");
+            
+            let storageBuffer = buffer;
+            let storageContentType = 'audio/mpeg';
+            
+            try {
+                sendProgress(25, "Comprimiendo audio...");
+                const compressedBuffer = await compressAudio(buffer, 'drive_audio.mp3');
+                base64Audio = compressedBuffer.toString('base64');
+                storageBuffer = compressedBuffer;
+                storageContentType = 'audio/mpeg';
+            } catch (err) {
+                console.error("Compression failed for Drive file, using raw:", err);
+                base64Audio = buffer.toString('base64');
+            }
+
+            // Upload to Supabase
+            const fileName = `${driveFileId}.mp3`;
+            const storagePath = `${radioId}/${fileName}`;
+            const { error: uploadError } = await supabaseServer.storage
+                .from('audios')
+                .upload(storagePath, storageBuffer, {
+                    contentType: storageContentType,
+                    upsert: true
+                });
+                
+            if (uploadError) {
+                console.error("Failed to upload Drive file to Supabase Storage:", uploadError);
+            } else {
+                console.log(`Uploaded Drive file to Storage: ${storagePath}`);
+                uploadedAudioPath = storagePath;
+            }
+
+        } else if (audioFile) {
+            sendProgress(10, "Procesando archivo de audio subido...");
+            const buffer = Buffer.from(await audioFile.arrayBuffer());
+            
+            if (buffer.length > 5 * 1024 * 1024) {
+              sendProgress(15, "El archivo es grande, comprimiendo...");
+              console.log(`File size ${(buffer.length / 1024 / 1024).toFixed(2)}MB exceeds 5MB limit. Compressing...`);
+              try {
+                const compressedBuffer = await compressAudio(buffer, audioFile.name);
+                base64Audio = compressedBuffer.toString('base64');
+              } catch (compressionError) {
+                console.error("Compression failed:", compressionError);
+                throw new Error("Error al comprimir el archivo de audio.");
+              }
+            } else {
+                base64Audio = buffer.toString('base64');
+            }
+        }
+
+        // 2. Transcribir con RunPod API
+        sendProgress(30, "Iniciando transcripción con IA (RunPod)...");
+
+        const runResponse = await fetch('https://api.runpod.ai/v2/4skn4uyl6f6guu/run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.RUNPOD}`,
+          },
+          body: JSON.stringify({
+            input: {
+              audio_base64: base64Audio,
+              model: "turbo"
+            }
+          }),
+          // @ts-ignore
+          dispatcher: whisperAgent,
+        });
+
+        if (!runResponse.ok) {
+          const errorText = await runResponse.text();
+          throw new Error(`RunPod API Error: ${runResponse.status} - ${errorText}`);
+        }
+
+        const runData = await runResponse.json();
+        const jobId = runData.id;
+        console.log(`RunPod Job started with ID: ${jobId}`);
+
+        // Poll for status
+        let whisperData: any = null;
+        let attempts = 0;
+        const maxAttempts = 1200; 
+        
+        while (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 1000));
+          
+          const statusResponse = await fetch(`https://api.runpod.ai/v2/4skn4uyl6f6guu/status/${jobId}`, {
+            headers: {
+              'Authorization': `Bearer ${process.env.RUNPOD}`,
+            },
+            // @ts-ignore
+            dispatcher: whisperAgent,
+          });
+
+          if (!statusResponse.ok) {
+            continue;
+          }
+
+          const statusData = await statusResponse.json();
+          
+          // Update progress based on attempts
+          // Start at 30%, go up to 80%
+          const progressStep = Math.min(50, Math.floor((attempts / 60) * 50)); // Assume 60s for full processing usually
+          // Or just slowly increment
+          if (attempts % 2 === 0) {
+              const currentProgress = 30 + Math.min(50, Math.floor(attempts / 2)); 
+              // If attempts=0 -> 30
+              // If attempts=100 -> 80
+              // Max at 85%
+              const p = Math.min(85, currentProgress);
+              sendProgress(p, `Transcribiendo audio (Intento ${attempts})...`);
+          }
+
+          if (statusData.status === 'COMPLETED') {
+            whisperData = statusData.output;
+            break;
+          } else if (statusData.status === 'FAILED') {
+            throw new Error(`RunPod Job Failed: ${JSON.stringify(statusData.error)}`);
+          }
+          
+          attempts++;
+        }
+
+        if (!whisperData) {
+          throw new Error(`Tiempo de espera agotado para la transcripción.`);
+        }
+
+        sendProgress(90, "Transcripción completada. Analizando contenido con Gemini...");
+
+        let transcriptionContext = "";
+        let fullTranscription = "";
+        
+        const segments = whisperData.segments || whisperData.output?.segments;
+        const text = whisperData.text || whisperData.transcription || whisperData.output?.text;
+
+        if (segments) {
+          transcriptionContext = JSON.stringify(segments.map((s: any) => ({
+            start: s.start,
+            end: s.end,
+            text: s.text
+          })), null, 2);
+          fullTranscription = JSON.stringify(segments.map((s: any) => ({
+            start: s.start,
+            end: s.end,
+            text: s.text
+          })));
+        } else if (text) {
+          transcriptionContext = text;
+          fullTranscription = text;
+        } else {
+          transcriptionContext = JSON.stringify(whisperData);
+          fullTranscription = JSON.stringify(whisperData);
+        }
+
+        // 3. Prompt a Gemini
+        const prompt = `
+          Actúa como un Auditor de Medios profesional.
+          
+          OBJETIVO:
+          Analiza la siguiente TRANSCRIPCIÓN DE AUDIO (generada por Whisper) y busca las frases objetivo.
+          
+          CONTEXTO (Segmentos de transcripción con tiempos):
+          ${transcriptionContext} 
+          
+          LISTA DE FRASES A BUSCAR:
+          ${phrases.map((p: string, i: number) => `${i + 1}. "${p}"`).join('\n')}
+
+          INSTRUCCIONES:
+          1. Busca cada una de las FRASES A BUSCAR en el CONTEXTO.
+          2. IMPORTANTE: Las frases pueden estar divididas en múltiples segmentos consecutivos. Debes buscar a través de los límites de los segmentos.
+          3. Si el usuario proporciona una frase larga, busca la secuencia de palabras independientemente de si está en uno o varios segmentos.
+          4. Extrae el 'start' y 'end' del segmento (o rango de segmentos) donde aparece la frase.
+          5. Si la frase abarca varios segmentos, usa el start del primero y el end del último.
+          6. Convierte los tiempos (que están en segundos, ej: 125.5) a formato "MM:SS" (ej: "02:05").
+          7. Sé flexible con errores menores de transcripción (ej: "diversion" vs "dibersión") o puntuación.
+          8. Prioriza encontrar la ubicación correcta (timestamps) aunque el texto transcrito tenga ligeras variaciones.
+          9. DEBES devolver UN objeto en el array por CADA frase buscada, incluso si no se encuentra. Si no se encuentra, pon "is_match": false.
+
+          FORMATO DE RESPUESTA (JSON PURO):
+          [
+            {
+              "target_phrase": "Texto exacto buscado",
+              "is_match": boolean, 
+              "transcription": "Texto encontrado en el segmento (o vacío si no se encontró)",
+              "validation_rate": "High" | "Medium" | "Low",
+              "timestamp_start": "MM:SS (o vacío si no se encontró)",
+              "timestamp_end": "MM:SS (o vacío si no se encontró)",
+              "details": "Explica la coincidencia encontrada o por qué no se encontró."
+            }
+          ]
+        `;
+
+        const result = await model.generateContent([prompt]);
+
+        const responseText = result.response.text();
+        const jsonString = responseText.replace(/```json|```/g, '').trim();
+        const analysis = JSON.parse(jsonString);
+        
+        sendProgress(98, "Análisis completado. Guardando resultados...");
+
+        sendResult({ 
+            success: true, 
+            analysis, 
+            full_transcription: fullTranscription,
+            audio_path: uploadedAudioPath
+        });
+
+      } catch (error: any) {
+        console.error('Error en verificación:', error);
+        sendError(error.message || 'Error desconocido');
+      } finally {
+        // Clean up temp files
+        if (tempInputPath && fs.existsSync(tempInputPath)) {
+          await unlink(tempInputPath).catch(console.error);
+        }
+        if (tempOutputPath && fs.existsSync(tempOutputPath)) {
+          await unlink(tempOutputPath).catch(console.error);
+        }
+
+        // Release Lock
+        if (lockAcquired) {
+            const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+            const supabaseAdmin = getSupabaseAdmin();
+            const { data: newCount, error: releaseError } = await supabaseAdmin.rpc('release_lock', { resource_id: 'runpod_whisper' });
+            if (!releaseError) {
+                console.log(`[Lock] Released. Count: ${newCount}`);
+            }
+        }
+        
+        controller.close();
+      }
+    }
+  });
+  
+  return new NextResponse(stream, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  });
+}
