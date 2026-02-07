@@ -9,11 +9,19 @@ import path from 'path';
 import { promisify } from 'util';
 import { toggleRunPodServer } from '@/lib/runpod-control';
 
+export const maxDuration = 300; // 5 minutes (max for Vercel Pro)
+
 // Configure ffmpeg
-const ffmpegBinary = ffmpegPath || path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
-const validFfmpegPath = ffmpegBinary.startsWith('\\ROOT') 
-  ? path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe') 
-  : ffmpegBinary;
+const getFfmpegPath = () => {
+    if (ffmpegPath) return ffmpegPath;
+    // Fallback logic
+    const binaryName = os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    return path.join(process.cwd(), 'node_modules', 'ffmpeg-static', binaryName);
+};
+
+const validFfmpegPath = getFfmpegPath().startsWith('\\ROOT') 
+  ? path.join(process.cwd(), 'node_modules', 'ffmpeg-static', os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg') 
+  : getFfmpegPath();
 
 ffmpeg.setFfmpegPath(validFfmpegPath);
 console.log("Using ffmpeg path:", validFfmpegPath);
