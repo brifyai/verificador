@@ -744,21 +744,24 @@ export default function RadioPage() {
               <div key={group.key} className="bg-white shadow sm:rounded-lg overflow-hidden border border-gray-100">
                 <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
                   <div className="flex flex-col">
-                    <span className="font-medium text-gray-900">
-                        {group.drive_file_name || (() => {
-                            if (group.audio_path) {
-                                const parts = group.audio_path.split('/');
-                                if (parts.length > 1) {
-                                    // Remove timestamp prefix if possible (e.g. 1738959564459-filename.mp3)
-                                    return parts[parts.length - 1].replace(/^\d+-/, '');
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                        <span className="font-medium text-gray-900">
+                            {group.drive_file_name || (() => {
+                                if (group.audio_path) {
+                                    const parts = group.audio_path.split('/');
+                                    if (parts.length > 1) {
+                                        // Remove timestamp prefix if possible (e.g. 1738959564459-filename.mp3)
+                                        return parts[parts.length - 1].replace(/^\d+-/, '');
+                                    }
                                 }
-                            }
-                            return 'Audio sin nombre';
-                        })()}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                        {new Date(group.created_at).toLocaleString()}
-                    </span>
+                                return 'Audio sin nombre';
+                            })()}
+                        </span>
+                        <span className="text-xs text-gray-500 hidden sm:inline">-</span>
+                        <span className="text-xs text-gray-500">
+                            {new Date(group.created_at).toLocaleString()}
+                        </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {group.items[0]?.full_transcription && (
