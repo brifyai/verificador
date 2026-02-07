@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
 
             sendProgress(20, "Procesando audio de Drive...");
             
-            let storageBuffer = buffer;
+            let storageBuffer: any = buffer;
             let storageContentType = 'audio/mpeg';
             
             try {
