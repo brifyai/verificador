@@ -493,15 +493,19 @@ export default function RadioPage() {
       
       const audioPath = uploadData.path;
 
-      // 2. Call API
-      const formData = new FormData();
-      formData.append('audio', file);
-      formData.append('phrases', JSON.stringify(validPhrases.map(p => p.text)));
-      formData.append('radioId', id as string);
-
+      // 2. Call API (Send audioPath instead of file to avoid Vercel body limits)
       const res = await fetch('/api/verify', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({
+          radioId: id,
+          phrases: validPhrases.map(p => p.text),
+          audioPath: audioPath,
+          fileName: file.name
+        }),
       });
 
       const data = await readStream(res, (p, msg) => {

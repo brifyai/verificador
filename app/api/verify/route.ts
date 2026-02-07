@@ -82,29 +82,35 @@ export async function POST(req: NextRequest) {
             console.error("Lock acquisition failed:", lockError);
         }
 
-        // Determine if it's JSON (for Drive files) or FormData (for uploads)
+        // Determine if it's JSON (for Drive files or direct uploads with path) or FormData
         const contentType = req.headers.get('content-type') || '';
         
         let audioFile: File | null = null;
         let phrases: string[] = [];
         let radioId = '';
         let driveFileId: string | undefined = undefined;
+        let audioPath: string | undefined = undefined;
+        let originalFileName: string = 'audio.mp3';
         
         if (contentType.includes('application/json')) {
             const body = await req.json();
             phrases = body.phrases;
             radioId = body.radioId;
             driveFileId = body.driveFileId;
+            audioPath = body.audioPath;
+            if (body.fileName) originalFileName = body.fileName;
         } else {
+            // Fallback for FormData (should not be used for large files in Vercel)
             const formData = await req.formData();
             audioFile = formData.get('audio') as File;
             const phrasesJson = formData.get('phrases') as string;
             radioId = formData.get('radioId') as string;
             phrases = JSON.parse(phrasesJson);
+            if (audioFile) originalFileName = audioFile.name;
         }
 
-        if ((!audioFile && !driveFileId) || !phrases || phrases.length === 0 || !radioId) {
-            throw new Error('Faltan campos requeridos (audio o frases)');
+        if ((!audioFile && !driveFileId && !audioPath) || !phrases || phrases.length === 0 || !radioId) {
+            throw new Error('Faltan campos requeridos (audio/path o frases)');
         }
 
         let base64Audio = '';
@@ -219,6 +225,46 @@ export async function POST(req: NextRequest) {
             } else {
                 console.log(`Uploaded Drive file to Storage: ${storagePath}`);
                 uploadedAudioPath = storagePath;
+            }
+        } else if (audioPath) {
+            sendProgress(10, "Descargando archivo desde Storage...");
+            uploadedAudioPath = audioPath;
+            
+            // Get user credentials for Storage access
+            const authHeader = req.headers.get('Authorization');
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabaseServer = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              {
+                global: { headers: { Authorization: authHeader || '' } },
+              }
+            );
+            
+            // Download file from Storage
+            const { data: fileData, error: downloadError } = await supabaseServer.storage
+                .from('audios')
+                .download(audioPath);
+
+            if (downloadError || !fileData) {
+                console.error("Storage download error:", downloadError);
+                throw new Error("No se pudo descargar el archivo de audio desde Storage.");
+            }
+            
+            const buffer = Buffer.from(await fileData.arrayBuffer());
+            
+            if (buffer.length > 5 * 1024 * 1024) {
+              sendProgress(15, "El archivo es grande, comprimiendo...");
+              console.log(`File size ${(buffer.length / 1024 / 1024).toFixed(2)}MB exceeds 5MB limit. Compressing...`);
+              try {
+                const compressedBuffer = await compressAudio(buffer, originalFileName);
+                base64Audio = compressedBuffer.toString('base64');
+              } catch (compressionError) {
+                console.error("Compression failed:", compressionError);
+                throw new Error("Error al comprimir el archivo de audio.");
+              }
+            } else {
+                base64Audio = buffer.toString('base64');
             }
 
         } else if (audioFile) {
