@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
                ffmpeg(tempInputPathLocal)
                  .audioFrequency(16000)
                  .audioChannels(1)
-                 .audioBitrate('64k')
+                 .audioBitrate('48k')
                  .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
                  .output(tempOutputPathLocal)
                  .on('end', resolve)
@@ -320,8 +320,8 @@ export async function POST(req: NextRequest) {
                 transcription: "plain_text",
                 temperature: 0,
                 temperature_increment_on_fallback: 0.2,
-                best_of: 5,
-                beam_size: 5,
+                best_of: 3,
+                beam_size: 3,
                 patience: 1,
                 suppress_tokens: "-1",
                 condition_on_previous_text: false,
