@@ -31,6 +31,16 @@ export default function DashboardLayout({
                 <Radio className="h-8 w-8 text-blue-600" />
                 <span className="ml-2 text-xl font-bold text-gray-900">RadioVerif</span>
               </Link>
+              <div className="hidden md:block ml-10">
+                <div className="flex items-baseline space-x-4">
+                  <Link
+                    href="/dashboard"
+                    className="text-gray-700 hover:bg-gray-50 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    Mis Radios
+                  </Link>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <Link 
