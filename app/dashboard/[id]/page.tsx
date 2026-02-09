@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Mic, CheckCircle, XCircle, Plus, Eye, RefreshCcw, FileAudio, Trash2 } from 'lucide-react';
+import { Loader2, Mic, CheckCircle, XCircle, Plus, Eye, RefreshCcw, FileAudio, Trash2, Download } from 'lucide-react';
 import { AudioTimeline } from '@/components/AudioTimeline';
 import { PhraseSelector } from '@/components/PhraseSelector';
 import { PendingVerificationItem } from '@/components/PendingVerificationItem';
@@ -188,6 +188,57 @@ export default function RadioPage() {
       fetchSavedPhrases();
     } catch (error) {
       console.error('Error saving phrases:', error);
+    }
+  };
+
+  const handleExport = () => {
+    try {
+      // 1. Filter matches (found phrases) from history
+      const matches = verifications
+        .filter(v => v.status !== 'pending' && v.is_match);
+
+      if (matches.length === 0) {
+        toast.info('No hay coincidencias para exportar');
+        return;
+      }
+
+      // 2. Prepare CSV data
+      const csvRows = [
+        ['Radio', 'Nombre del Audio', 'Frase Encontrada', 'Inicio', 'Fin', 'Fecha']
+      ];
+
+      matches.forEach(v => {
+        const audioName = v.drive_file_name || (v.audio_path ? v.audio_path.split('/').pop() : 'Desconocido');
+        const date = new Date(v.created_at).toLocaleString();
+        
+        csvRows.push([
+          radio.name,
+          audioName,
+          v.target_phrase,
+          v.timestamp_start || '',
+          v.timestamp_end || '',
+          date
+        ]);
+      });
+
+      // 3. Convert to CSV string
+      const csvContent = csvRows
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      // 4. Trigger download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `reporte_${radio.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error('Error exporting:', error);
+      toast.error('Error al exportar');
     }
   };
 
@@ -711,7 +762,17 @@ export default function RadioPage() {
       </div>
 
       <div>
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Historial de Verificaciones</h2>
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Historial de Verificaciones</h2>
+            <button
+                onClick={handleExport}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                title="Exportar reporte CSV"
+            >
+                <Download className="w-4 h-4" />
+                Exportar Reporte
+            </button>
+        </div>
         
         {/* Pending Verifications */}
         {verifications.filter((v: any) => v.status === 'pending').length > 0 && (
