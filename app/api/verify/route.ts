@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
                ffmpeg(tempInputPathLocal)
                  .audioFrequency(16000)
                  .audioChannels(1)
-                 .audioBitrate('32k')
+                 .audioBitrate('64k')
                  .output(tempOutputPathLocal)
                  .on('end', resolve)
                  .on('error', reject)
@@ -314,9 +314,20 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             input: {
-              audio_base64: base64Audio,
-              model: "turbo"
-            }
+                audio_base64: base64Audio,
+                model: "turbo",
+                transcription: "plain_text",
+                temperature: 0,
+                best_of: 5,
+                beam_size: 5,
+                patience: 1,
+                suppress_tokens: "-1",
+                condition_on_previous_text: false,
+                compression_ratio_threshold: 2.4,
+                logprob_threshold: -1.0,
+                no_speech_threshold: 0.6,
+                word_timestamps: true
+              }
           }),
           // @ts-ignore
           dispatcher: whisperAgent,
