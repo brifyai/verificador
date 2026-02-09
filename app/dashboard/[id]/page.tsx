@@ -616,7 +616,7 @@ export default function RadioPage() {
 
       <div className="bg-white shadow sm:rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Nueva Verificación</h2>
+          <h2 className="text-xl font-bold text-gray-900">Nueva Verificación</h2>
         </div>
         <form onSubmit={handleVerify} className="space-y-4">
           <div>
@@ -711,12 +711,12 @@ export default function RadioPage() {
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Historial de Verificaciones</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Historial de Verificaciones</h2>
         
         {/* Pending Verifications */}
         {verifications.filter((v: any) => v.status === 'pending').length > 0 && (
           <div className="mb-8 space-y-4">
-            <h3 className="text-lg font-medium text-gray-700 flex items-center gap-2">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <FileAudio className="h-5 w-5" />
               Pendientes de Verificación (Drive)
             </h3>
