@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
                  .audioFrequency(16000)
                  .audioChannels(1)
                  .audioBitrate('64k')
+                 .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
                  .output(tempOutputPathLocal)
                  .on('end', resolve)
                  .on('error', reject)
@@ -318,6 +319,7 @@ export async function POST(req: NextRequest) {
                 model: "turbo",
                 transcription: "plain_text",
                 temperature: 0,
+                temperature_increment_on_fallback: 0.2,
                 best_of: 5,
                 beam_size: 5,
                 patience: 1,
@@ -325,8 +327,9 @@ export async function POST(req: NextRequest) {
                 condition_on_previous_text: false,
                 compression_ratio_threshold: 2.4,
                 logprob_threshold: -1.0,
-                no_speech_threshold: 0.6,
-                word_timestamps: true
+                no_speech_threshold: 0.8,
+                word_timestamps: true,
+                initial_prompt: "Esta es una grabación de radio que contiene música de fondo, canciones y publicidad mezclada con locución. Transcribe TODO lo que se hable, incluso si hay música sonando fuerte o si son letras de canciones. No omitas nada."
               }
           }),
           // @ts-ignore
