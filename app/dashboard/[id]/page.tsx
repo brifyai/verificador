@@ -657,7 +657,7 @@ export default function RadioPage() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 cursor-pointer transition-all disabled:opacity-50"
           >
             <RefreshCcw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Sincronizando...' : 'Sincronizar Drive'}
@@ -765,10 +765,10 @@ export default function RadioPage() {
         <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-gray-900">Historial de Verificaciones</h2>
             <button
-                onClick={handleExport}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                title="Exportar reporte CSV"
-            >
+                 onClick={handleExport}
+                 className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 cursor-pointer transition-all"
+                 title="Exportar reporte CSV"
+             >
                 <Download className="w-4 h-4" />
                 Exportar Reporte
             </button>
