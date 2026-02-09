@@ -102,6 +102,14 @@ async function readStream(response: Response, onProgress: (p: number, msg?: stri
   throw new Error("Conexión cerrada sin resultados");
 }
 
+// Helper to sanitize filename
+const sanitizeFileName = (name: string) => {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/[^a-zA-Z0-9.-]/g, "_"); // Replace special chars with underscore
+};
+
 export default function RadioPage() {
   const { id } = useParams();
   const [radio, setRadio] = useState<any>(null);
@@ -484,7 +492,8 @@ export default function RadioPage() {
       }
 
       // 1. Upload audio
-      const fileName = `${Date.now()}-${file.name}`;
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileName = `${Date.now()}-${sanitizedName}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('audios')
         .upload(`${id}/${fileName}`, file);
