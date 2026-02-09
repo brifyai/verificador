@@ -829,11 +829,7 @@ export default function RadioPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="mt-2 flex">
-                              <div className="flex items-center text-sm text-gray-500">
-                                <p>Transcripción: {v.transcription?.substring(0, 100)}...</p>
-                              </div>
-                            </div>
+                       
                           </div>
                           <div className="ml-2 flex-shrink-0 flex flex-col items-end">
                             <div className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${v.is_match ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
