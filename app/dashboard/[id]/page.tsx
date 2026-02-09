@@ -221,8 +221,8 @@ export default function RadioPage() {
         ]);
       });
 
-      // 3. Convert to CSV string
-      const csvContent = csvRows
+      // 3. Convert to CSV string with BOM for Excel
+      const csvContent = '\uFEFF' + csvRows
         .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
