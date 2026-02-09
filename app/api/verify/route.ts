@@ -148,7 +148,6 @@ export async function POST(req: NextRequest) {
                  .audioFrequency(16000)
                  .audioChannels(1)
                  .audioBitrate('48k')
-                 .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
                  .output(tempOutputPathLocal)
                  .on('end', resolve)
                  .on('error', reject)
@@ -320,8 +319,8 @@ export async function POST(req: NextRequest) {
                 transcription: "plain_text",
                 temperature: 0,
                 temperature_increment_on_fallback: 0.2,
-                best_of: 3,
-                beam_size: 3,
+                best_of: 1,
+                beam_size: 1,
                 patience: 1,
                 suppress_tokens: "-1",
                 condition_on_previous_text: false,
