@@ -130,15 +130,12 @@ export async function POST(req: NextRequest) {
         let uploadedAudioPath: string | null = null;
         
         // Helper for compression
-        const compressAudio = async (inputBuffer: Buffer, fileName: string = 'audio.mp3'): Promise<Buffer> => {
+        const compressAudio = async (inputBuffer: Buffer, fileName: string = 'audio.mp3', bitrate: string = '48k'): Promise<Buffer> => {
            const tempDir = os.tmpdir();
            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
            const ext = fileName.split('.').pop() || 'mp3';
            const tempInputPathLocal = path.join(tempDir, `input-${uniqueSuffix}.${ext}`);
            const tempOutputPathLocal = path.join(tempDir, `output-${uniqueSuffix}.mp3`);
-
-           // Store paths for cleanup in finally block (if needed, though we clean inside this func too)
-           // But since these are local to this helper, we clean them here.
 
            try {
              await writeFile(tempInputPathLocal, inputBuffer);
@@ -147,7 +144,7 @@ export async function POST(req: NextRequest) {
                ffmpeg(tempInputPathLocal)
                  .audioFrequency(16000)
                  .audioChannels(1)
-                 .audioBitrate('48k')
+                 .audioBitrate(bitrate)
                  .output(tempOutputPathLocal)
                  .on('end', resolve)
                  .on('error', reject)
@@ -155,7 +152,7 @@ export async function POST(req: NextRequest) {
              });
 
              const compressedBuffer = await readFile(tempOutputPathLocal);
-             console.log(`Compressed size: ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+             console.log(`Compressed size (${bitrate}): ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB`);
              
              await unlink(tempInputPathLocal).catch(console.error);
              await unlink(tempOutputPathLocal).catch(console.error);
@@ -166,6 +163,38 @@ export async function POST(req: NextRequest) {
              if (fs.existsSync(tempOutputPathLocal)) await unlink(tempOutputPathLocal).catch(() => {});
              throw error;
            }
+        };
+
+        const getOptimizedAudio = async (originalBuffer: Buffer, fileName: string) => {
+            // Max safe size for Base64 in 10MB body is approx 7MB
+            const MAX_SIZE = 7 * 1024 * 1024; 
+            
+            let buffer = originalBuffer;
+            
+            // If original is small enough, return as is (unless it needs format conversion, but let's assume ffmpeg always runs for consistency if > 5MB logic was used)
+            // Actually, we want to ensure it fits.
+            
+            if (buffer.length <= MAX_SIZE && buffer.length <= 5 * 1024 * 1024) {
+                 return buffer;
+            }
+
+            // Strategy: Try 48k -> 32k -> 24k -> 16k
+            const bitrates = ['48k', '32k', '24k', '16k'];
+            
+            for (const bitrate of bitrates) {
+                sendProgress(15, `Optimizando audio (${bitrate})...`);
+                try {
+                    const compressed = await compressAudio(originalBuffer, fileName, bitrate);
+                    if (compressed.length <= MAX_SIZE) {
+                        return compressed;
+                    }
+                    console.log(`Still too large (${(compressed.length/1024/1024).toFixed(2)}MB) at ${bitrate}, trying lower...`);
+                } catch (e) {
+                    console.error(`Compression failed at ${bitrate}:`, e);
+                }
+            }
+            
+            throw new Error(`El archivo de audio es demasiado largo o grande para ser procesado (incluso comprimido supera los límites). Por favor, suba un archivo más corto.`);
         };
 
         if (driveFileId) {
@@ -213,14 +242,13 @@ export async function POST(req: NextRequest) {
             let storageContentType = 'audio/mpeg';
             
             try {
-                sendProgress(25, "Comprimiendo audio...");
-                const compressedBuffer = await compressAudio(buffer, 'drive_audio.mp3');
-                base64Audio = compressedBuffer.toString('base64');
-                storageBuffer = compressedBuffer;
+                const optimizedBuffer = await getOptimizedAudio(buffer, 'drive_audio.mp3');
+                base64Audio = optimizedBuffer.toString('base64');
+                storageBuffer = optimizedBuffer;
                 storageContentType = 'audio/mpeg';
             } catch (err) {
-                console.error("Compression failed for Drive file, using raw:", err);
-                base64Audio = buffer.toString('base64');
+                console.error("Optimization failed for Drive file:", err);
+                throw err;
             }
 
             // Upload to Supabase
@@ -266,36 +294,24 @@ export async function POST(req: NextRequest) {
             
             const buffer = Buffer.from(await fileData.arrayBuffer());
             
-            if (buffer.length > 5 * 1024 * 1024) {
-              sendProgress(15, "El archivo es grande, comprimiendo...");
-              console.log(`File size ${(buffer.length / 1024 / 1024).toFixed(2)}MB exceeds 5MB limit. Compressing...`);
-              try {
-                const compressedBuffer = await compressAudio(buffer, originalFileName);
-                base64Audio = compressedBuffer.toString('base64');
-              } catch (compressionError) {
-                console.error("Compression failed:", compressionError);
-                throw new Error("Error al comprimir el archivo de audio.");
-              }
-            } else {
-                base64Audio = buffer.toString('base64');
+            try {
+                const optimizedBuffer = await getOptimizedAudio(buffer, originalFileName);
+                base64Audio = optimizedBuffer.toString('base64');
+            } catch (err) {
+                console.error("Optimization failed:", err);
+                throw err;
             }
 
         } else if (audioFile) {
             sendProgress(10, "Procesando archivo de audio subido...");
             const buffer = Buffer.from(await audioFile.arrayBuffer());
             
-            if (buffer.length > 5 * 1024 * 1024) {
-              sendProgress(15, "El archivo es grande, comprimiendo...");
-              console.log(`File size ${(buffer.length / 1024 / 1024).toFixed(2)}MB exceeds 5MB limit. Compressing...`);
-              try {
-                const compressedBuffer = await compressAudio(buffer, audioFile.name);
-                base64Audio = compressedBuffer.toString('base64');
-              } catch (compressionError) {
-                console.error("Compression failed:", compressionError);
-                throw new Error("Error al comprimir el archivo de audio.");
-              }
-            } else {
-                base64Audio = buffer.toString('base64');
+            try {
+                const optimizedBuffer = await getOptimizedAudio(buffer, audioFile.name);
+                base64Audio = optimizedBuffer.toString('base64');
+            } catch (err) {
+                console.error("Optimization failed:", err);
+                throw err;
             }
         }
 
