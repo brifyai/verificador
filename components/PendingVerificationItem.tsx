@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 interface PendingVerificationItemProps {
   verification: any;
   savedPhrases: any[];
-  onVerify: (verificationId: string, driveFileId: string, phrases: { text: string; save: boolean }[]) => Promise<void>;
+  onVerify: (verificationId: string, driveFileId: string, phrases: { text: string; save: boolean }[]) => Promise<any>;
   processing: boolean;
   processingId: string | null;
   progress: number;
