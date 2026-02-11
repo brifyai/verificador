@@ -364,6 +364,8 @@ export async function POST(req: NextRequest) {
         let whisperData: any = null;
         let attempts = 0;
         const maxAttempts = 1200; 
+        let executionTimeMs = 0;
+        const startTime = Date.now();
         
         while (attempts < maxAttempts) {
           await new Promise(r => setTimeout(r, 1000));
@@ -397,6 +399,7 @@ export async function POST(req: NextRequest) {
 
           if (statusData.status === 'COMPLETED') {
             whisperData = statusData.output;
+            executionTimeMs = statusData.executionTime || (Date.now() - startTime);
             break;
           } else if (statusData.status === 'FAILED') {
             throw new Error(`RunPod Job Failed: ${JSON.stringify(statusData.error)}`);
@@ -408,6 +411,9 @@ export async function POST(req: NextRequest) {
         if (!whisperData) {
           throw new Error(`Tiempo de espera agotado para la transcripción.`);
         }
+        
+        const processingSeconds = executionTimeMs / 1000;
+        console.log(`Processing time: ${processingSeconds}s`);
 
         sendProgress(90, "Transcripción completada. Analizando contenido con Gemini...");
 
@@ -459,11 +465,15 @@ export async function POST(req: NextRequest) {
           7. Sé flexible con errores menores de transcripción (ej: "diversion" vs "dibersión") o puntuación.
           8. Prioriza encontrar la ubicación correcta (timestamps) aunque el texto transcrito tenga ligeras variaciones.
           9. DEBES devolver UN objeto en el array por CADA frase buscada, incluso si no se encuentra. Si no se encuentra, pon "is_match": false.
+          10. REGLA CRÍTICA: El array de respuesta DEBE tener EXACTAMENTE el mismo número de objetos que la lista de frases de entrada.
+          11. Si recibes 3 frases, devuelve un array de 3 objetos. Si recibes 5, devuelve 5.
+          12. NO fusiones resultados. Si una frase no se encuentra, devuelve el objeto con "is_match": false.
+          13. Mantén el orden estricto: El objeto 1 corresponde a la frase 1, el objeto 2 a la frase 2, etc.
 
           FORMATO DE RESPUESTA (JSON PURO):
           [
             {
-              "target_phrase": "Texto exacto buscado",
+              "target_phrase": "Texto exacto buscado (copiar de la lista de entrada)",
               "is_match": boolean, 
               "transcription": "Texto encontrado en el segmento (o vacío si no se encontró)",
               "validation_rate": "High" | "Medium" | "Low",
@@ -474,14 +484,66 @@ export async function POST(req: NextRequest) {
           ]
         `;
 
-        const result = await model.generateContent([prompt]);
+        let result;
+        let retries = 0;
+        const maxRetries = 3;
+        
+        while (retries < maxRetries) {
+            try {
+                result = await model.generateContent([prompt]);
+                break; // Success
+            } catch (err: any) {
+                if (err.status === 429 || err.message?.includes('429') || err.message?.includes('Too Many Requests')) {
+                    retries++;
+                    console.log(`Gemini Rate Limit hit. Retrying (${retries}/${maxRetries}) in 5s...`);
+                    await new Promise(r => setTimeout(r, 5000 * retries)); // Exponential backoff: 5s, 10s, 15s
+                } else {
+                    throw err; // Other error, rethrow immediately
+                }
+            }
+        }
+        
+        if (!result) {
+            throw new Error("Gemini API Rate Limit Exceeded after retries.");
+        }
 
         const responseText = result.response.text();
         const jsonString = responseText.replace(/```json|```/g, '').trim();
-        const rawAnalysis = JSON.parse(jsonString);
+        let rawAnalysis;
+        try {
+            rawAnalysis = JSON.parse(jsonString);
+        } catch (e) {
+            console.error("JSON Parse Error", e);
+            throw new Error("La IA devolvió una respuesta inválida.");
+        }
+
+        // Validate and Fix Result Count
+        if (!Array.isArray(rawAnalysis)) {
+             rawAnalysis = [rawAnalysis]; 
+        }
+
+        // Ensure we have results for ALL phrases (Map by index to preserve order/count)
+        const fixedAnalysis = phrases.map((phrase, index) => {
+            // 1. Try to take the item at the same index
+            let item = rawAnalysis[index];
+
+            // 2. If valid, return it (assuming LLM respected order)
+            if (item) return item;
+
+            // 3. If missing, return a default "not found" object
+            return {
+                target_phrase: phrase,
+                is_match: false,
+                transcription: "",
+                validation_rate: "Low",
+                start_seconds: null,
+                end_seconds: null,
+                details: "No se encontró resultado para esta frase."
+            };
+        });
         
         // Post-process to format times
-        const analysis = rawAnalysis.map((item: any) => ({
+        const analysis = fixedAnalysis.map((item: any) => ({
             ...item,
             timestamp_start: item.start_seconds ? formatTime(item.start_seconds) : "",
             timestamp_end: item.end_seconds ? formatTime(item.end_seconds) : ""
@@ -493,7 +555,8 @@ export async function POST(req: NextRequest) {
             success: true, 
             analysis, 
             full_transcription: fullTranscription,
-            audio_path: uploadedAudioPath
+            audio_path: uploadedAudioPath,
+            processing_seconds: processingSeconds
         });
 
       } catch (error: any) {

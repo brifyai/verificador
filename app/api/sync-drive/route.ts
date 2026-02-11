@@ -1,7 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { listFiles } from '@/lib/drive';
+import { listFiles, listFolders } from '@/lib/drive';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+
+// Recursive function to traverse folders and collect files
+async function traverseFolder(folderId: string, refreshToken: string, depth: number = 0, maxDepth: number = 5): Promise<Array<{ file: any, parentId: string }>> {
+  if (depth > maxDepth) return [];
+
+  const results: Array<{ file: any, parentId: string }> = [];
+
+  try {
+    // 1. Get files in current folder
+    try {
+      const files = await listFiles(folderId, refreshToken);
+      if (files && files.length > 0) {
+        files.forEach(f => results.push({ file: f, parentId: folderId }));
+      }
+    } catch (err) {
+      console.error(`Error listing files in folder ${folderId}:`, err);
+    }
+
+    // 2. Get subfolders
+    let subFolders: any[] = [];
+    try {
+      subFolders = await listFolders(folderId, refreshToken);
+    } catch (err) {
+      console.error(`Error listing folders in folder ${folderId}:`, err);
+    }
+
+    // 3. Process subfolders sequentially to avoid rate limits and ensure stability
+    if (subFolders && subFolders.length > 0) {
+      for (const folder of subFolders) {
+        // Add a small delay to be nice to the API
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const subResults = await traverseFolder(folder.id, refreshToken, depth + 1, maxDepth);
+        results.push(...subResults);
+      }
+    }
+  } catch (error) {
+    console.error(`Error traversing folder ${folderId}:`, error);
+  }
+
+  return results;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { radioId } = body;
+    const { radioId, folderId } = body;
 
     // Fetch radios to sync
     let query = supabase.from('radios').select('*').eq('user_id', user.id);
@@ -59,13 +101,16 @@ export async function POST(req: NextRequest) {
 
     for (const radio of radiosWithDrive) {
       try {
-        // 1. List files from Drive
-        const driveFiles = await listFiles(radio.drive_folder_id, refreshToken);
+        // 1. List files recursively from Drive
+        const targetFolderId = folderId || radio.drive_folder_id;
         
-        if (!driveFiles || driveFiles.length === 0) continue;
+        // Use recursive traversal
+        const allFiles = await traverseFolder(targetFolderId, refreshToken, 0, 5); // Depth 5
+        
+        if (allFiles.length === 0) continue;
 
-        // 2. Get existing verifications for this radio to avoid duplicates
-        // We only care about checking if the drive_file_id already exists
+        // 2. Get existing verifications to avoid duplicates
+        // We fetch ALL verifications for this radio to check against
         const { data: existingVerifications } = await supabase
           .from('verifications')
           .select('drive_file_id')
@@ -75,21 +120,22 @@ export async function POST(req: NextRequest) {
         const existingIds = new Set(existingVerifications?.map(v => v.drive_file_id));
 
         // 3. Identify new files
-        const newFiles = driveFiles.filter(f => f.id && !existingIds.has(f.id));
+        const newItems = allFiles.filter(item => item.file.id && !existingIds.has(item.file.id));
 
-        if (newFiles.length === 0) continue;
+        if (newItems.length === 0) continue;
 
         // 4. Insert new pending verifications
-        const toInsert = newFiles.map(f => ({
+        const toInsert = newItems.map(item => ({
           radio_id: radio.id,
           user_id: user.id,
-          drive_file_id: f.id,
-          drive_web_link: f.webViewLink,
-          drive_file_name: f.name,
+          drive_file_id: item.file.id,
+          drive_web_link: item.file.webViewLink,
+          drive_file_name: item.file.name,
+          drive_parent_folder_id: item.parentId, // Store specific parent folder
           status: 'pending',
           target_phrase: null, // User needs to fill this
           audio_path: null, // Not in Supabase Storage yet
-          created_at: f.createdTime || new Date().toISOString(),
+          created_at: item.file.createdTime || new Date().toISOString(),
         }));
 
         const { error: insertError } = await supabase

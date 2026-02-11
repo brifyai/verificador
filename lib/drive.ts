@@ -48,10 +48,27 @@ export const listFiles = async (folderId: string, refreshToken: string) => {
       q: `'${folderId}' in parents and trashed = false and (mimeType contains 'audio/' or mimeType = 'application/mp3')`,
       fields: 'nextPageToken, files(id, name, webViewLink, createdTime, mimeType)',
       orderBy: 'createdTime desc',
+      pageSize: 1000,
     });
     return res.data.files;
   } catch (err) {
     console.error('Error listing Drive files:', err);
+    throw err;
+  }
+};
+
+export const listFolders = async (folderId: string, refreshToken: string) => {
+  const drive = getDriveClient(refreshToken);
+  try {
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`,
+      fields: 'nextPageToken, files(id, name, webViewLink, createdTime)',
+      orderBy: 'name',
+      pageSize: 1000,
+    });
+    return res.data.files;
+  } catch (err) {
+    console.error('Error listing Drive folders:', err);
     throw err;
   }
 };

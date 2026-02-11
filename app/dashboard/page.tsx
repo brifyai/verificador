@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Plus, Radio as RadioIcon, Trash2 } from 'lucide-react';
+import { Plus, Radio as RadioIcon, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { RunPodControl } from '@/components/RunPodControl';
 import Swal from 'sweetalert2';
@@ -10,6 +10,7 @@ import Swal from 'sweetalert2';
 export default function DashboardPage() {
   const [radios, setRadios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newRadio, setNewRadio] = useState({ name: '', address: '', url: '' });
   const [userRole, setUserRole] = useState<string>('user');
@@ -101,6 +102,31 @@ export default function DashboardPage() {
   };
 
 
+  const handleSync = async () => {
+    setSyncing(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    try {
+        const res = await fetch('/api/radios/sync', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al sincronizar');
+        
+        toast.success(`Sincronización completada. ${data.syncedCount} radios nuevas encontradas.`);
+        fetchRadios();
+    } catch (error: any) {
+        toast.error(error.message);
+    } finally {
+        setSyncing(false);
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
@@ -137,6 +163,14 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-900">Mis Radios</h1>
         <div className="flex items-center gap-4">
             {userRole === 'super_admin' && <RunPodControl />}
+            <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+            >
+                <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                Sincronizar Drive
+            </button>
             <button
             onClick={() => setShowCreate(!showCreate)}
             className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
