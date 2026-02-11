@@ -23,7 +23,8 @@ async function traverseFolder(folderId: string, refreshToken: string, depth: num
     // 2. Get subfolders
     let subFolders: any[] = [];
     try {
-      subFolders = await listFolders(folderId, refreshToken);
+      const result = await listFolders(folderId, refreshToken);
+      subFolders = result || [];
     } catch (err) {
       console.error(`Error listing folders in folder ${folderId}:`, err);
     }
