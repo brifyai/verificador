@@ -37,22 +37,47 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Create User
+    // Create User or Get Existing
+    let userId;
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true
     });
 
-    if (createError) throw createError;
-    if (!newUser.user) throw new Error('Failed to create user');
+    if (createError) {
+      if (createError.message?.includes('already been registered')) {
+        // Fetch existing user profile to get ID
+        const { data: existingProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('email', email)
+          .single();
+          
+        if (existingProfile) {
+          userId = existingProfile.id;
+        } else {
+           // If not in profiles, try to get from Auth (via listUsers - expensive but needed)
+           const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+           const u = users.find(u => u.email === email);
+           if (u) userId = u.id;
+           else throw createError; // Should not happen if "already registered"
+        }
+      } else {
+        throw createError;
+      }
+    } else {
+      userId = newUser.user!.id;
+    }
+
+    if (!userId) throw new Error('Failed to create or retrieve user');
 
     // Update Profile Role
     // (Trigger creates default profile, we update it)
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({ 
-        id: newUser.user.id, 
+        id: userId, 
         email: email,
         role: role 
       });
@@ -62,10 +87,13 @@ export async function POST(req: NextRequest) {
     // If Admin and assignedRadios exist
     if (role === 'admin' && assignedRadios && Array.isArray(assignedRadios) && assignedRadios.length > 0) {
       const assignments = assignedRadios.map((radioId: string) => ({
-        admin_id: newUser.user!.id,
+        admin_id: userId,
         radio_id: radioId
       }));
       
+      // First delete existing assignments if updating
+      await supabaseAdmin.from('radio_assignments').delete().eq('admin_id', userId);
+
       const { error: assignError } = await supabaseAdmin
         .from('radio_assignments')
         .insert(assignments);
