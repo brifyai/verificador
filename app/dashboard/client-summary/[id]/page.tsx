@@ -392,8 +392,8 @@ export default function SummaryDetailPage() {
                                    <div className="w-[200px]">
                                       <SummaryAudioPlayer 
                                         audioPath={item.audio_path} 
-                                        startSeconds={parseSeconds(item.timestamp_start)} 
-                                        endSeconds={parseSeconds(item.timestamp_end)} 
+                                        startSeconds={parseSeconds(item.timestamp_start) !== null ? Math.max(0, parseSeconds(item.timestamp_start)! - 3) : null} 
+                                        endSeconds={parseSeconds(item.timestamp_end) !== null ? parseSeconds(item.timestamp_end)! + 3 : null} 
                                       />
                                    </div>
                                  </>
