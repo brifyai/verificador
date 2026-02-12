@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { listFiles, listFolders } from '@/lib/drive';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { extractBroadcastDateTime } from '@/lib/utils';
 
 // Recursive function to traverse folders and collect files
 async function traverseFolder(folderId: string, folderName: string, refreshToken: string, depth: number = 0, maxDepth: number = 5): Promise<Array<{ file: any, parentId: string, folderName: string }>> {
@@ -153,20 +154,25 @@ export async function POST(req: NextRequest) {
         }
 
         // 4. Insert new pending verifications
-        const toInsert = newItems.map(item => ({
-          radio_id: radio.id,
-          user_id: user.id,
-          drive_file_id: item.file.id,
-          drive_web_link: item.file.webViewLink,
-          drive_file_name: item.file.name,
-          drive_parent_folder_id: item.parentId, // Store specific parent folder
-          drive_folder_name: item.folderName, // Store folder name
-          batch_id: batchJobId, // Associate with batch
-          status: 'pending',
-          target_phrase: null, // User needs to fill this
-          audio_path: null, // Not in Supabase Storage yet
-          created_at: item.file.createdTime || new Date().toISOString(),
-        }));
+        const toInsert = newItems.map(item => {
+          const { date, time } = extractBroadcastDateTime(item.file.name);
+          return {
+            radio_id: radio.id,
+            user_id: user.id,
+            drive_file_id: item.file.id,
+            drive_web_link: item.file.webViewLink,
+            drive_file_name: item.file.name,
+            drive_parent_folder_id: item.parentId, // Store specific parent folder
+            drive_folder_name: item.folderName, // Store folder name
+            batch_id: batchJobId, // Associate with batch
+            status: 'pending',
+            target_phrase: null, // User needs to fill this
+            audio_path: null, // Not in Supabase Storage yet
+            created_at: item.file.createdTime || new Date().toISOString(),
+            broadcast_date: date,
+            broadcast_time: time
+          };
+        });
 
         const { error: insertError } = await supabase
           .from('verifications')

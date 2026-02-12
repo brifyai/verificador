@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
+import { extractBroadcastDateTime } from '@/lib/utils';
 import { Loader2, Mic, CheckCircle, XCircle, Plus, Eye, RefreshCcw, FileAudio, Trash2, Download, Folder, ChevronRight, Home, ArrowLeft, Clock, BarChart3 } from 'lucide-react';
 import { AudioTimeline } from '@/components/AudioTimeline';
 import { PhraseSelector } from '@/components/PhraseSelector';
@@ -218,6 +219,35 @@ export default function RadioPage() {
         fetchBatches();
     }
   }, [radio, currentFolderId]);
+
+  useEffect(() => {
+    // Populate batch item dates/times from verifications if available
+    if (verifications.length > 0) {
+      setBatchItemTimes(prev => {
+          const next = { ...prev };
+          let changed = false;
+          verifications.forEach(v => {
+              if (v.status === 'pending' && v.broadcast_time && !next[v.id]) {
+                  next[v.id] = v.broadcast_time;
+                  changed = true;
+              }
+          });
+          return changed ? next : prev;
+      });
+      
+      setBatchItemDates(prev => {
+          const next = { ...prev };
+          let changed = false;
+          verifications.forEach(v => {
+              if (v.status === 'pending' && v.broadcast_date && !next[v.id]) {
+                  next[v.id] = v.broadcast_date;
+                  changed = true;
+              }
+          });
+          return changed ? next : prev;
+      });
+    }
+  }, [verifications]);
 
   const fetchBatches = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -586,6 +616,11 @@ export default function RadioPage() {
         return;
       }
       setFile(file);
+
+      // Auto-detect date/time
+      const { date, time } = extractBroadcastDateTime(file.name);
+      if (date) setBroadcastDate(date);
+      if (time) setBroadcastTime(time);
     }
   };
 
