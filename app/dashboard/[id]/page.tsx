@@ -471,6 +471,9 @@ export default function RadioPage() {
             status: 'completed',
             user_id: user?.id,
             full_transcription: transcription, // Keep the original transcription
+            drive_parent_folder_id: baseItem.drive_parent_folder_id,
+            broadcast_time: baseItem.broadcast_time,
+            broadcast_date: baseItem.broadcast_date,
         }));
 
         const { error: dbError } = await supabase.from('verifications').insert(verificationsToInsert);
@@ -1153,6 +1156,8 @@ export default function RadioPage() {
                 full_transcription: item.full_transcription,
                 created_at: new Date().toISOString(),
                 drive_parent_folder_id: item.drive_parent_folder_id,
+                broadcast_time: item.broadcast_time,
+                broadcast_date: item.broadcast_date,
                 // New analysis is independent of previous batch unless we want to track it
             }));
 
