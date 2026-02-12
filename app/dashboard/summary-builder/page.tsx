@@ -76,6 +76,9 @@ export default function SummaryBuilderPage() {
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new');
   const [existingClients, setExistingClients] = useState<{id: string, email: string}[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
+  
+  // Audio Playback Settings
+  const [audioPadding, setAudioPadding] = useState(5); // Default 5s padding
 
   useEffect(() => {
     fetchVerifications();
@@ -323,7 +326,7 @@ export default function SummaryBuilderPage() {
         <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
           <Search className="w-4 h-4" /> Filtros
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Radio</label>
             <select
@@ -362,6 +365,22 @@ export default function SummaryBuilderPage() {
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
+          </div>
+          <div className="bg-gray-50 p-2 rounded border border-gray-100">
+             <label className="block text-xs font-medium text-gray-500 mb-1">Holgura de audio: {audioPadding}s</label>
+             <input 
+               type="range" 
+               min="1" 
+               max="15" 
+               value={audioPadding} 
+               onChange={(e) => setAudioPadding(Number(e.target.value))}
+               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+             />
+             <div className="flex justify-between text-[10px] text-gray-400">
+               <span>1s</span>
+               <span>5s</span>
+               <span>15s</span>
+             </div>
           </div>
         </div>
       </div>
@@ -451,8 +470,8 @@ export default function SummaryBuilderPage() {
                         {v.is_match && v.timestamp_start ? (
                           <SummaryAudioPlayer 
                             audioPath={v.audio_path} 
-                            startSeconds={parseTime(v.timestamp_start)}
-                            endSeconds={parseTime(v.timestamp_end)}
+                            startSeconds={parseTime(v.timestamp_start) !== null ? Math.max(0, parseTime(v.timestamp_start)! - audioPadding) : null}
+                            endSeconds={parseTime(v.timestamp_end) !== null ? parseTime(v.timestamp_end)! + audioPadding : null}
                           />
                         ) : (
                           <span className="text-gray-400">-</span>
