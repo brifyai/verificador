@@ -1588,16 +1588,16 @@ export default function RadioPage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            {processing && !processingId && (
+            {processing && processingStates['manual-upload'] && (
               <div className="w-full">
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>{progressMessage || 'Procesando audio...'}</span>
-                  <span>{Math.round(progress)}%</span>
+                  <span>{processingStates['manual-upload'].message || 'Procesando audio...'}</span>
+                  <span>{Math.round(processingStates['manual-upload'].progress)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
                   <div 
                     className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
-                    style={{ width: `${progress}%` }}
+                    style={{ width: `${processingStates['manual-upload'].progress}%` }}
                   ></div>
                 </div>
               </div>
