@@ -1922,9 +1922,7 @@ export default function RadioPage() {
                                             savedPhrases={savedPhrases}
                                             onVerify={handlePendingVerify}
                                             processing={processing}
-                                            processingId={processingId}
-                                            progress={progress}
-                                            progressMessage={progressMessage}
+                                            processingState={processingStates[v.id]}
                                         />
                                     </div>
                                 </div>

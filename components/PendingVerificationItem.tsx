@@ -9,9 +9,7 @@ interface PendingVerificationItemProps {
   savedPhrases: any[];
   onVerify: (verificationId: string, driveFileId: string, phrases: { text: string; save: boolean }[], batchId?: string, broadcastTime?: string, broadcastDate?: string) => Promise<any>;
   processing: boolean;
-  processingId: string | null;
-  progress: number;
-  progressMessage?: string;
+  processingState?: { progress: number; message: string };
 }
 
 export function PendingVerificationItem({ 
@@ -19,9 +17,7 @@ export function PendingVerificationItem({
   savedPhrases, 
   onVerify, 
   processing: globalProcessing,
-  processingId,
-  progress,
-  progressMessage
+  processingState
 }: PendingVerificationItemProps) {
   const [phrases, setPhrases] = useState<{ text: string; save: boolean }[]>([{ text: '', save: false }]);
   const [localProcessing, setLocalProcessing] = useState(false);
@@ -68,7 +64,9 @@ export function PendingVerificationItem({
     }
   };
 
-  const isProcessingThis = globalProcessing && processingId === v.id;
+  const isProcessingThis = processingState !== undefined;
+  const progress = processingState?.progress || 0;
+  const progressMessage = processingState?.message || '';
   const isProcessing = globalProcessing || localProcessing;
 
   return (
