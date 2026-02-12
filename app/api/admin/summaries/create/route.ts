@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     if (summaryError) throw summaryError;
 
     // Send Email Notification
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const appUrl = 'https://verificador-self.vercel.app';
     const creatorEmail = user.email;
 
     let emailHtml = `
