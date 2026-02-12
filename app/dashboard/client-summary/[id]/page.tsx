@@ -36,6 +36,7 @@ export default function SummaryDetailPage() {
   const params = useParams();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [audioPadding, setAudioPadding] = useState(5); // Default 5s padding
 
   useEffect(() => {
     if (params.id) {
@@ -228,6 +229,23 @@ export default function SummaryDetailPage() {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium uppercase">Total Audios</div>
           <div className="mt-2 text-3xl font-bold text-gray-900">{totalAudios}</div>
+          
+          <div className="mt-6 pt-4 border-t border-gray-100">
+            <label className="block text-xs font-medium text-gray-500 mb-2">Holgura de audio: {audioPadding}s</label>
+            <input 
+              type="range" 
+              min="1" 
+              max="15" 
+              value={audioPadding} 
+              onChange={(e) => setAudioPadding(Number(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+              <span>1s</span>
+              <span>5s</span>
+              <span>15s</span>
+            </div>
+          </div>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium uppercase">Coincidencias</div>
@@ -392,8 +410,8 @@ export default function SummaryDetailPage() {
                                    <div className="w-[200px]">
                                       <SummaryAudioPlayer 
                                         audioPath={item.audio_path} 
-                                        startSeconds={parseSeconds(item.timestamp_start) !== null ? Math.max(0, parseSeconds(item.timestamp_start)! - 3) : null} 
-                                        endSeconds={parseSeconds(item.timestamp_end) !== null ? parseSeconds(item.timestamp_end)! + 3 : null} 
+                                        startSeconds={parseSeconds(item.timestamp_start) !== null ? Math.max(0, parseSeconds(item.timestamp_start)! - audioPadding) : null} 
+                                        endSeconds={parseSeconds(item.timestamp_end) !== null ? parseSeconds(item.timestamp_end)! + audioPadding : null} 
                                       />
                                    </div>
                                  </>
