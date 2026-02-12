@@ -244,7 +244,8 @@ export default function SummaryDetailPage() {
             }
         });
         
-        const imgProps1 = pdf.getImageProperties(dataUrl1);
+        // Calculate dimensions to fit width (keeping aspect ratio)
+        const imgProps1 = (pdf as any).getImageProperties(dataUrl1);
         const pdfImgHeight1 = (imgProps1.height * pdfWidth) / imgProps1.width;
         pdf.addImage(dataUrl1, 'PNG', 0, 0, pdfWidth, pdfImgHeight1);
 
@@ -265,7 +266,7 @@ export default function SummaryDetailPage() {
             }
         });
 
-        const imgProps2 = pdf.getImageProperties(dataUrl2);
+        const imgProps2 = (pdf as any).getImageProperties(dataUrl2);
         const pdfImgHeight2 = (imgProps2.height * pdfWidth) / imgProps2.width;
         pdf.addImage(dataUrl2, 'PNG', 0, 0, pdfWidth, pdfImgHeight2);
         
