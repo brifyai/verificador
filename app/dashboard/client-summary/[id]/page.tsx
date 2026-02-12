@@ -619,7 +619,10 @@ export default function SummaryDetailPage() {
                         innerRadius={110}
                         outerRadius={160}
                         fill="#82ca9d"
-                        label={({ name }) => name.length > 20 ? name.substring(0, 20) + '...' : name}
+                        label={({ name }: { name?: string }) => {
+                            const val = name || '';
+                            return val.length > 20 ? val.substring(0, 20) + '...' : val;
+                        }}
                     >
                         {outerData.map((entry, index) => (
                             <Cell key={`cell-outer-${index}`} fill={entry.color} fillOpacity={0.6} stroke="#fff" />
@@ -1012,7 +1015,10 @@ export default function SummaryDetailPage() {
                           outerRadius={160}
                           fill="#82ca9d"
                           isAnimationActive={false}
-                          label={({ name }) => name.length > 20 ? name.substring(0, 20) + '..' : name}
+                          label={({ name }: { name?: string }) => {
+                                const val = name || '';
+                                return val.length > 20 ? val.substring(0, 20) + '...' : val;
+                            }}
                       >
                           {outerData.map((entry, index) => (
                               <Cell key={`cell-outer-${index}`} fill={entry.color} fillOpacity={0.6} stroke="#fff" />
