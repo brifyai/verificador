@@ -135,16 +135,7 @@ export async function POST(req: NextRequest) {
               radio_id: radio.id,
               user_id: user.id,
               name: `Sincronización Drive - ${new Date().toLocaleString()}`,
-              status: 'completed', // Since we just insert pending items, the "job" of syncing is done. Or 'processing'? 
-              // Actually, these items are 'pending' verification. So the batch is 'processing' until verified?
-              // But 'batch_jobs' usually tracks the verification process.
-              // Here we are just importing files.
-              // Let's mark it as 'completed' (import completed) or maybe 'pending' if it tracks the verification status of items?
-              // If we use it for filtering, 'completed' sync is fine.
-              // But if we want to track progress of verifications, we might want 'processing'.
-              // Let's set it to 'processing' and let the user update it later? 
-              // Or better: 'completed' because the *sync* job is done. The verifications are pending.
-              // But if the user filters by "Lote", they want to see this group.
+              // We set it to 'processing' so it shows up in the batch list as active/pending until items are processed
               status: 'processing', 
               total_files: newItems.length,
               processed_files: 0
