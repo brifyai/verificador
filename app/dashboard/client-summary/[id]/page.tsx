@@ -996,7 +996,7 @@ export default function SummaryDetailPage() {
                           outerRadius={110}
                           fill="#8884d8"
                           isAnimationActive={false}
-                          label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
+                          label={({ percent }: { percent: number }) => `${(percent * 100).toFixed(0)}%`}
                           labelLine={false}
                       >
                           {innerData.map((entry, index) => (
