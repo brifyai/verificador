@@ -4,17 +4,17 @@ import { listFiles, listFolders } from '@/lib/drive';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 // Recursive function to traverse folders and collect files
-async function traverseFolder(folderId: string, refreshToken: string, depth: number = 0, maxDepth: number = 5): Promise<Array<{ file: any, parentId: string }>> {
+async function traverseFolder(folderId: string, folderName: string, refreshToken: string, depth: number = 0, maxDepth: number = 5): Promise<Array<{ file: any, parentId: string, folderName: string }>> {
   if (depth > maxDepth) return [];
 
-  const results: Array<{ file: any, parentId: string }> = [];
+  const results: Array<{ file: any, parentId: string, folderName: string }> = [];
 
   try {
     // 1. Get files in current folder
     try {
       const files = await listFiles(folderId, refreshToken);
       if (files && files.length > 0) {
-        files.forEach(f => results.push({ file: f, parentId: folderId }));
+        files.forEach(f => results.push({ file: f, parentId: folderId, folderName: folderName }));
       }
     } catch (err) {
       console.error(`Error listing files in folder ${folderId}:`, err);
@@ -29,13 +29,13 @@ async function traverseFolder(folderId: string, refreshToken: string, depth: num
       console.error(`Error listing folders in folder ${folderId}:`, err);
     }
 
-    // 3. Process subfolders sequentially to avoid rate limits and ensure stability
+    // 3. Process subfolders sequentially
     if (subFolders && subFolders.length > 0) {
       for (const folder of subFolders) {
         // Add a small delay to be nice to the API
         await new Promise(resolve => setTimeout(resolve, 200));
         
-        const subResults = await traverseFolder(folder.id, refreshToken, depth + 1, maxDepth);
+        const subResults = await traverseFolder(folder.id, folder.name || 'Unknown', refreshToken, depth + 1, maxDepth);
         results.push(...subResults);
       }
     }
@@ -106,7 +106,8 @@ export async function POST(req: NextRequest) {
         const targetFolderId = folderId || radio.drive_folder_id;
         
         // Use recursive traversal
-        const allFiles = await traverseFolder(targetFolderId, refreshToken, 0, 5); // Depth 5
+        // We might need to fetch the root folder name if we want it precise, but 'Root' or 'Radio Folder' is a safe default for top level
+        const allFiles = await traverseFolder(targetFolderId, 'Carpeta Principal', refreshToken, 0, 5); // Depth 5
         
         if (allFiles.length === 0) continue;
 
@@ -125,6 +126,41 @@ export async function POST(req: NextRequest) {
 
         if (newItems.length === 0) continue;
 
+        // Create Batch Job for this sync
+        let batchJobId = null;
+        try {
+          const { data: batchJob, error: batchError } = await supabase
+            .from('batch_jobs')
+            .insert({
+              radio_id: radio.id,
+              user_id: user.id,
+              name: `Sincronización Drive - ${new Date().toLocaleString()}`,
+              status: 'completed', // Since we just insert pending items, the "job" of syncing is done. Or 'processing'? 
+              // Actually, these items are 'pending' verification. So the batch is 'processing' until verified?
+              // But 'batch_jobs' usually tracks the verification process.
+              // Here we are just importing files.
+              // Let's mark it as 'completed' (import completed) or maybe 'pending' if it tracks the verification status of items?
+              // If we use it for filtering, 'completed' sync is fine.
+              // But if we want to track progress of verifications, we might want 'processing'.
+              // Let's set it to 'processing' and let the user update it later? 
+              // Or better: 'completed' because the *sync* job is done. The verifications are pending.
+              // But if the user filters by "Lote", they want to see this group.
+              status: 'processing', 
+              total_files: newItems.length,
+              processed_files: 0
+            })
+            .select()
+            .single();
+
+          if (!batchError && batchJob) {
+            batchJobId = batchJob.id;
+          } else {
+             console.warn('Could not create batch job:', batchError);
+          }
+        } catch (e) {
+          console.warn('Error creating batch job:', e);
+        }
+
         // 4. Insert new pending verifications
         const toInsert = newItems.map(item => ({
           radio_id: radio.id,
@@ -133,6 +169,8 @@ export async function POST(req: NextRequest) {
           drive_web_link: item.file.webViewLink,
           drive_file_name: item.file.name,
           drive_parent_folder_id: item.parentId, // Store specific parent folder
+          drive_folder_name: item.folderName, // Store folder name
+          batch_id: batchJobId, // Associate with batch
           status: 'pending',
           target_phrase: null, // User needs to fill this
           audio_path: null, // Not in Supabase Storage yet

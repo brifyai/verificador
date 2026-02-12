@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Save } from 'lucide-react';
+import { Save, Mail } from 'lucide-react';
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,9 @@ export default function SettingsPage() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session?.access_token}`
             },
-            body: JSON.stringify({ drive_root_folder_id: rootFolderId })
+            body: JSON.stringify({ 
+                drive_root_folder_id: rootFolderId
+            })
         });
 
         if (!res.ok) throw new Error('Failed to save settings');
@@ -194,7 +196,7 @@ export default function SettingsPage() {
         </div>
 
         <form onSubmit={handleSave}>
-          <div className="mb-4">
+          <div className="mb-8">
             <label htmlFor="rootFolderId" className="block text-sm font-medium text-gray-700">
               ID de Carpeta Raíz (Google Drive)
             </label>
@@ -212,27 +214,52 @@ export default function SettingsPage() {
             <p className="mt-2 text-sm text-gray-500">
               ID de la carpeta donde se crearán las subcarpetas para cada Radio.
             </p>
+            {rootFolderId && isGoogleConnected && (
+                <div className="mt-2 flex justify-end">
+                     <button
+                        type="button"
+                        onClick={handleDeleteFolderId}
+                        disabled={saving}
+                        className="inline-flex justify-center py-1 px-3 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                     >
+                        Eliminar ID
+                     </button>
+                </div>
+            )}
           </div>
 
-          <div className="flex justify-end">
-            {rootFolderId && isGoogleConnected ? (
-                 <button
-                    type="button"
-                    onClick={handleDeleteFolderId}
-                    disabled={saving}
-                    className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                 >
-                    {saving ? 'Procesando...' : 'Eliminar ID'}
-                 </button>
-            ) : (
-                <button
-                    type="submit"
-                    disabled={saving || loading}
-                    className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                    {saving ? 'Guardando...' : 'Guardar Configuración'}
-                </button>
-            )}
+          <div className="border-t pt-6 mb-6">
+            <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <Mail className="w-5 h-5" />
+                Configuración de Correo
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+                El sistema utiliza la cuenta de Google conectada para el envío de notificaciones e invitaciones.
+                Asegúrate de que la cuenta conectada tenga permisos de Gmail.
+            </p>
+            
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
+                <div className="flex">
+                    <div className="ml-3">
+                        <p className="text-sm text-blue-700">
+                            {isGoogleConnected 
+                                ? '✅ El envío de correos está habilitado a través de tu cuenta de Google.' 
+                                : '⚠️ Conecta tu cuenta de Google arriba para habilitar el envío de correos.'}
+                        </p>
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t">
+            <button
+                type="submit"
+                disabled={saving || loading}
+                className="inline-flex items-center justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? 'Guardando...' : 'Guardar Todo'}
+            </button>
           </div>
         </form>
       </div>

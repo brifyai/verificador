@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 interface PendingVerificationItemProps {
   verification: any;
   savedPhrases: any[];
-  onVerify: (verificationId: string, driveFileId: string, phrases: { text: string; save: boolean }[]) => Promise<any>;
+  onVerify: (verificationId: string, driveFileId: string, phrases: { text: string; save: boolean }[], batchId?: string, broadcastTime?: string, broadcastDate?: string) => Promise<any>;
   processing: boolean;
   processingId: string | null;
   progress: number;
@@ -24,6 +24,8 @@ export function PendingVerificationItem({
 }: PendingVerificationItemProps) {
   const [phrases, setPhrases] = useState<{ text: string; save: boolean }[]>([{ text: '', save: false }]);
   const [localProcessing, setLocalProcessing] = useState(false);
+  const [broadcastTime, setBroadcastTime] = useState('');
+  const [broadcastDate, setBroadcastDate] = useState('');
 
   const handlePhraseChange = (index: number, text: string) => {
     const newPhrases = [...phrases];
@@ -55,7 +57,7 @@ export function PendingVerificationItem({
 
     setLocalProcessing(true);
     try {
-      await onVerify(v.id, v.drive_file_id, validPhrases);
+      await onVerify(v.id, v.drive_file_id, validPhrases, undefined, broadcastTime, broadcastDate);
     } finally {
       setLocalProcessing(false);
     }
@@ -122,6 +124,29 @@ export function PendingVerificationItem({
             <Plus className="h-3 w-3 mr-1" />
             Agregar otra frase
           </button>
+          
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <div>
+              <label className="block text-xs font-medium text-blue-800 mb-1">Día emisión</label>
+              <input
+                type="date"
+                value={broadcastDate}
+                onChange={(e) => setBroadcastDate(e.target.value)}
+                disabled={isProcessing}
+                className="block w-full rounded-md border-blue-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-1.5 border"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-blue-800 mb-1">Horario emisión</label>
+              <input
+                type="time"
+                value={broadcastTime}
+                onChange={(e) => setBroadcastTime(e.target.value)}
+                disabled={isProcessing}
+                className="block w-full rounded-md border-blue-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-1.5 border"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end flex-col gap-2 w-full">

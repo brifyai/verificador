@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Mic, CheckCircle, XCircle, Plus, Eye, RefreshCcw, FileAudio, Trash2, Download, Folder, ChevronRight, Home, ArrowLeft } from 'lucide-react';
+import { Loader2, Mic, CheckCircle, XCircle, Plus, Eye, RefreshCcw, FileAudio, Trash2, Download, Folder, ChevronRight, Home, ArrowLeft, Clock, BarChart3 } from 'lucide-react';
 import { AudioTimeline } from '@/components/AudioTimeline';
 import { PhraseSelector } from '@/components/PhraseSelector';
 import { PendingVerificationItem } from '@/components/PendingVerificationItem';
@@ -147,6 +147,15 @@ export default function RadioPage() {
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [batchPhrases, setBatchPhrases] = useState([{ text: '', save: false }]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  
+  // Broadcast Time State
+  const [broadcastTime, setBroadcastTime] = useState('');
+  const [broadcastDate, setBroadcastDate] = useState(''); // New State
+  const [batchBroadcastTime, setBatchBroadcastTime] = useState('');
+  const [batchBroadcastDate, setBatchBroadcastDate] = useState(''); // New State
+  const [batchItemTimes, setBatchItemTimes] = useState<Record<string, string>>({});
+  const [batchItemDates, setBatchItemDates] = useState<Record<string, string>>({}); // New State
+  const [activeBatchItemId, setActiveBatchItemId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [batchName, setBatchName] = useState('');
   
@@ -159,17 +168,46 @@ export default function RadioPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
-    const getUserRole = async () => {
+    const checkAccess = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      setUserRole(user?.user_metadata?.role || null);
-    };
-    getUserRole();
-  }, []);
+      if (!user) return;
 
-  useEffect(() => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      
+      const role = profile?.role || 'client';
+      setUserRole(role);
+
+      if (role === 'super_admin') {
+         fetchRadio();
+         fetchSavedPhrases();
+      } else if (role === 'admin') {
+         // Check assignment
+         const { data: assignment } = await supabase
+            .from('radio_assignments')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('radio_id', id)
+            .single();
+         
+         if (assignment) {
+            fetchRadio();
+            fetchSavedPhrases();
+         } else {
+            toast.error('No tienes acceso a esta radio');
+            setRadio(null);
+         }
+      } else {
+         toast.error('Acceso denegado');
+         setRadio(null);
+      }
+    };
+
     if (id) {
-      fetchRadio();
-      fetchSavedPhrases();
+      checkAccess();
     }
   }, [id]);
 
@@ -548,7 +586,7 @@ export default function RadioPage() {
     }
   };
 
-  const handlePendingVerify = async (verificationId: string, driveFileId: string, phrasesList: { text: string; save: boolean }[], batchId?: string) => {
+  const handlePendingVerify = async (verificationId: string, driveFileId: string, phrasesList: { text: string; save: boolean }[], batchId?: string, broadcastTimeVal?: string, broadcastDateVal?: string) => {
     setProcessing(true);
     setProcessingId(verificationId);
 
@@ -611,7 +649,9 @@ export default function RadioPage() {
             full_transcription: data.full_transcription,
             audio_path: data.audio_path, // Update audio_path from backend response
             processing_seconds: processingSeconds,
-            batch_id: batchId
+            batch_id: batchId,
+            broadcast_time: broadcastTimeVal,
+            broadcast_date: broadcastDateVal
           })
           .eq('id', verificationId)
           .select();
@@ -697,7 +737,9 @@ export default function RadioPage() {
                 full_transcription: data.full_transcription,
                 created_at: original?.created_at || new Date().toISOString(),
                 processing_seconds: processingSeconds,
-                batch_id: batchId
+                batch_id: batchId,
+                broadcast_time: broadcastTimeVal,
+                broadcast_date: broadcastDateVal
             }));
 
             const { error: insertError } = await supabase.from('verifications').insert(toInsert);
@@ -714,7 +756,9 @@ export default function RadioPage() {
             full_transcription: data.full_transcription,
             audio_path: data.audio_path, // Update audio_path even if no match
             processing_seconds: processingSeconds,
-            batch_id: batchId
+            batch_id: batchId,
+            broadcast_time: broadcastTimeVal,
+            broadcast_date: broadcastDateVal
           })
           .eq('id', verificationId)
           .select();
@@ -821,7 +865,9 @@ export default function RadioPage() {
         full_transcription: data.full_transcription,
         drive_file_name: file.name, // Save original filename
         drive_parent_folder_id: currentFolderId, // Fix: Assign current folder ID
-        processing_seconds: data.processing_seconds
+        processing_seconds: data.processing_seconds,
+        broadcast_time: broadcastTime,
+        broadcast_date: broadcastDate
       }));
 
       const { error: dbError } = await supabase.from('verifications').insert(verificationsToInsert);
@@ -832,6 +878,8 @@ export default function RadioPage() {
       toast.success(`Verificación completada. ${results.filter((r: any) => r.is_match).length} coincidencias encontradas.`);
       setFile(null);
       setPhrases([{ text: '', save: false }]);
+      setBroadcastTime('');
+      setBroadcastDate('');
       fetchVerifications();
 
     } catch (error: any) {
@@ -906,7 +954,9 @@ export default function RadioPage() {
                 user_id: user?.id,
                 total_files: selectedPendingIds.length,
                 status: 'processing',
-                name: finalBatchName
+                name: finalBatchName,
+                broadcast_time: batchBroadcastTime,
+                broadcast_date: batchBroadcastDate
             })
             .select()
             .single();
@@ -936,8 +986,10 @@ export default function RadioPage() {
         if (!verification) continue;
 
         try {
+            const itemBroadcastTime = batchItemTimes[verificationId] || batchBroadcastTime;
+            const itemBroadcastDate = batchItemDates[verificationId] || batchBroadcastDate;
             // @ts-ignore
-            const result = await handlePendingVerify(verificationId, verification.drive_file_id, phrasesForProcessing, batchId || undefined);
+            const result = await handlePendingVerify(verificationId, verification.drive_file_id, phrasesForProcessing, batchId || undefined, itemBroadcastTime, itemBroadcastDate);
             
             if (result && result.processingSeconds) {
                 totalProcessingSeconds += result.processingSeconds;
@@ -1008,6 +1060,11 @@ export default function RadioPage() {
     setSelectedPendingIds([]);
     setBatchPhrases([{ text: '', save: false }]);
     setBatchName(''); // Reset name
+    setBatchBroadcastTime(''); // Reset time
+    setBatchBroadcastDate(''); // Reset date
+    setBatchItemTimes({});
+    setBatchItemDates({});
+    setActiveBatchItemId(null);
     fetchBatches(); // Refresh batch list
     
     toast.success(
@@ -1354,6 +1411,27 @@ export default function RadioPage() {
             </button>
           </div>
           
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Día de emisión</label>
+              <input
+                type="date"
+                value={broadcastDate}
+                onChange={(e) => setBroadcastDate(e.target.value)}
+                className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Horario emisión (Opcional)</label>
+              <input
+                type="time"
+                value={broadcastTime}
+                onChange={(e) => setBroadcastTime(e.target.value)}
+                className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700">Audio (MP3, WAV, AAC)</label>
             <div className="mt-1 flex justify-center rounded-md border-2 border-dashed border-gray-300 px-6 pt-5 pb-6">
@@ -1473,6 +1551,121 @@ export default function RadioPage() {
                                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                                 />
                             </div>
+
+                            {/* Time Management Module */}
+                            <div className="bg-white p-3 rounded-md border border-blue-100 shadow-sm space-y-3">
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm font-medium text-blue-800 flex items-center gap-2">
+                                            <Clock className="w-4 h-4" />
+                                            Horarios y Fechas de Emisión
+                                        </label>
+                                    </div>
+                                    
+                                    {/* Global Inputs (Fallback) */}
+                                    <div className="flex flex-wrap gap-4 p-2 bg-gray-50 rounded border border-gray-100">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-medium text-gray-500">Fecha Global:</span>
+                                            <input
+                                                type="date"
+                                                value={batchBroadcastDate}
+                                                onChange={(e) => setBatchBroadcastDate(e.target.value)}
+                                                className="h-7 text-xs border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-medium text-gray-500">Hora Global:</span>
+                                            <input
+                                                type="time"
+                                                value={batchBroadcastTime}
+                                                onChange={(e) => setBatchBroadcastTime(e.target.value)}
+                                                className="h-7 text-xs border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Pills Container */}
+                                {selectedPendingIds.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedPendingIds.map(id => {
+                                            const item = verifications.find(v => v.id === id);
+                                            if (!item) return null;
+                                            const hasTime = !!batchItemTimes[id];
+                                            const hasDate = !!batchItemDates[id];
+                                            const isSet = hasTime || hasDate;
+                                            const isActive = activeBatchItemId === id;
+                                            
+                                            return (
+                                                <button
+                                                    key={id}
+                                                    onClick={() => setActiveBatchItemId(isActive ? null : id)}
+                                                    className={`
+                                                        px-2 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1
+                                                        ${isActive 
+                                                            ? 'bg-blue-100 border-blue-500 text-blue-800 ring-1 ring-blue-500' 
+                                                            : isSet 
+                                                                ? 'bg-green-50 border-green-300 text-green-700' 
+                                                                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-blue-300'
+                                                        }
+                                                    `}
+                                                >
+                                                    <span className="truncate max-w-[100px]">{item.drive_file_name || 'Sin nombre'}</span>
+                                                    {isSet && <CheckCircle className="w-3 h-3" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* Active Item Time Editor */}
+                                {activeBatchItemId && (
+                                    <div className="flex flex-col gap-2 bg-blue-50 p-3 rounded text-sm animate-in fade-in slide-in-from-top-1 border border-blue-200">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-blue-900 font-medium truncate max-w-[200px]">
+                                                {verifications.find(v => v.id === activeBatchItemId)?.drive_file_name}
+                                            </span>
+                                            <button 
+                                                onClick={() => setActiveBatchItemId(null)}
+                                                className="text-blue-600 hover:text-blue-800"
+                                            >
+                                                <XCircle className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <div className="flex-1 space-y-1">
+                                                <label className="text-xs text-blue-700">Fecha</label>
+                                                <input
+                                                    type="date"
+                                                    value={batchItemDates[activeBatchItemId] || ''}
+                                                    onChange={(e) => {
+                                                        setBatchItemDates(prev => ({
+                                                            ...prev,
+                                                            [activeBatchItemId]: e.target.value
+                                                        }));
+                                                    }}
+                                                    className="w-full h-8 text-sm border-blue-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                            <div className="flex-1 space-y-1">
+                                                <label className="text-xs text-blue-700">Hora</label>
+                                                <input
+                                                    type="time"
+                                                    autoFocus
+                                                    value={batchItemTimes[activeBatchItemId] || ''}
+                                                    onChange={(e) => {
+                                                        setBatchItemTimes(prev => ({
+                                                            ...prev,
+                                                            [activeBatchItemId]: e.target.value
+                                                        }));
+                                                    }}
+                                                    className="w-full h-8 text-sm border-blue-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             
                             {/* Phrase Input for Batch */}
                             <div className="space-y-2">
@@ -1536,7 +1729,11 @@ export default function RadioPage() {
                                         Seleccionar 5
                                     </button>
                                     <button
-                                        onClick={() => setSelectedPendingIds([])}
+                                        onClick={() => {
+                                            setSelectedPendingIds([]);
+                                            setBatchItemTimes({});
+                                            setActiveBatchItemId(null);
+                                        }}
                                         className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
                                     >
                                         Limpiar selección
@@ -1612,8 +1809,44 @@ export default function RadioPage() {
           {activeTab === 'history' && (
             <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                    <div>
-                        <h2 className="text-lg font-medium text-gray-900">Resultados de Verificación</h2>
+                    <div className="w-full">
+                        <h2 className="text-lg font-medium text-gray-900 mb-4">Resultados de Verificación</h2>
+                        
+                        {/* Super Admin Global Metrics */}
+                        {userRole === 'super_admin' && selectedBatchFilter === 'all' && batches.length > 0 && (
+                            <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-lg flex flex-wrap gap-6 items-center shadow-sm">
+                                <div className="font-semibold text-indigo-900 flex items-center gap-2 border-r border-indigo-200 pr-6 mr-2">
+                                    <BarChart3 className="w-5 h-5" />
+                                    <div>
+                                        <div className="text-sm">Métricas Globales</div>
+                                        <div className="text-xs font-normal opacity-80">Todos los lotes</div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-8 flex-wrap">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider mb-0.5">Tiempo Real Total</span>
+                                        <span className="text-xl font-bold text-indigo-900 flex items-baseline gap-1">
+                                            {(batches.reduce((acc, b) => acc + (Number(b.total_duration_seconds) || 0), 0) / 60).toFixed(2)} 
+                                            <span className="text-xs font-medium text-indigo-600">min</span>
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-green-600 font-bold uppercase tracking-wider mb-0.5">Tiempo IA Total</span>
+                                        <span className="text-xl font-bold text-green-900 flex items-baseline gap-1">
+                                            {(batches.reduce((acc, b) => acc + (Number(b.total_processing_seconds) || 0), 0) / 60).toFixed(2)} 
+                                            <span className="text-xs font-medium text-green-600">min</span>
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-0.5">Costo Total</span>
+                                        <span className="text-xl font-bold text-blue-900 flex items-baseline gap-1">
+                                            ${batches.reduce((acc, b) => acc + (Number(b.estimated_cost) || 0), 0).toFixed(4)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {selectedBatchFilter !== 'all' && batches.filter(b => b.id === selectedBatchFilter).map(batch => (
                             <div key={batch.id} className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-4 text-sm items-center">
                                 <div className="font-semibold text-blue-900 flex items-center gap-2">
@@ -1754,6 +1987,21 @@ export default function RadioPage() {
                                                 <span className="mx-1">|</span> 
                                                 💰 ${ (group.items[0].processing_seconds * 0.00031).toFixed(4) }
                                             </span>
+                                        </>
+                                    )}
+                                    
+                                    {/* Broadcast Date/Time */}
+                                    {(group.items[0]?.broadcast_date || group.items[0]?.broadcast_time) && (
+                                        <>
+                                            <span className="text-xs text-gray-500 hidden sm:inline">-</span>
+                                            <div className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 font-medium">
+                                                <Clock className="w-3 h-3" />
+                                                <span>
+                                                    {group.items[0].broadcast_date ? new Date(group.items[0].broadcast_date + 'T12:00:00').toLocaleDateString() : ''} 
+                                                    {group.items[0].broadcast_date && group.items[0].broadcast_time ? ' • ' : ''}
+                                                    {group.items[0].broadcast_time || ''}
+                                                </span>
+                                            </div>
                                         </>
                                     )}
                                 </div>

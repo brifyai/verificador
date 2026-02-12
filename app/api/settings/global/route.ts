@@ -49,16 +49,22 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
     const body = await req.json();
-    const { drive_root_folder_id } = body;
-  
-    const supabaseAdmin = getSupabaseAdmin();
+  const { drive_root_folder_id } = body;
 
-    if (drive_root_folder_id !== undefined) {
-        const { error } = await supabaseAdmin.from('system_settings').upsert({
-            key: 'drive_root_folder_id',
-            value: drive_root_folder_id,
-            updated_at: new Date().toISOString()
-        });
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const updates = [];
+
+  if (drive_root_folder_id !== undefined) {
+      updates.push({
+          key: 'drive_root_folder_id',
+          value: drive_root_folder_id,
+          updated_at: new Date().toISOString()
+      });
+  }
+
+    if (updates.length > 0) {
+        const { error } = await supabaseAdmin.from('system_settings').upsert(updates);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
