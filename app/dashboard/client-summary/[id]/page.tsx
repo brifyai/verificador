@@ -13,6 +13,7 @@ import autoTable from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
 import { SummaryAudioPlayer } from '@/components/SummaryAudioPlayer';
 import { SmartAudioTimeline } from '@/components/SmartAudioTimeline';
+import { FilterMultiSelect } from '@/components/FilterMultiSelect';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend, PieChart, Pie, Cell } from 'recharts';
 
 interface VerificationData {
@@ -43,6 +44,8 @@ export default function SummaryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [audioPadding, setAudioPadding] = useState(5); // Default 5s padding
   const [isExporting, setIsExporting] = useState(false); // To handle PDF export visibility
+  const [selectedRadios, setSelectedRadios] = useState<string[]>([]);
+  const [selectedPhrases, setSelectedPhrases] = useState<string[]>([]);
 
   useEffect(() => {
     if (params.id) {
@@ -91,6 +94,10 @@ export default function SummaryDetailPage() {
   
   // Count unique audios
   const totalAudios = new Set(summary.data.map(v => v.audio_path)).size;
+  
+  // Available Options for Filters
+  const allRadios = Array.from(new Set(summary.data.map(v => v.radios?.name || 'Radio Desconocida'))).sort();
+  const allPhrases = Array.from(new Set(summary.data.map(v => v.target_phrase))).sort();
 
   // Group by Radio -> Audio
   const groupedData: Record<string, Record<string, VerificationData[]>> = {};
@@ -683,11 +690,43 @@ export default function SummaryDetailPage() {
 
       </div>
 
-      {/* Detailed List Grouped by Radio -> Audio */}`
+      {/* Detailed List Grouped by Radio -> Audio */}
       <div className="space-y-8">
-        <h2 className="text-xl font-bold text-gray-900">Detalle de Verificaciones</h2>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-900">Detalle de Verificaciones</h2>
+            
+            <div className="flex flex-col sm:flex-row gap-4 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                <FilterMultiSelect 
+                    label="Filtrar por Radio"
+                    options={allRadios}
+                    selected={selectedRadios}
+                    onChange={setSelectedRadios}
+                    placeholder="Todas las radios"
+                />
+                <div className="w-px bg-gray-200 hidden sm:block"></div>
+                <FilterMultiSelect 
+                    label="Filtrar por Frase"
+                    options={allPhrases}
+                    selected={selectedPhrases}
+                    onChange={setSelectedPhrases}
+                    placeholder="Todas las frases"
+                />
+            </div>
+        </div>
         
-        {Object.entries(groupedData).map(([radioName, audioGroups]) => (
+        {Object.entries(groupedData).map(([radioName, audioGroups]) => {
+          // 1. Filter by Radio
+          if (selectedRadios.length > 0 && !selectedRadios.includes(radioName)) return null;
+
+          const filteredAudioEntries = Object.entries(audioGroups).filter(([audioPath, items]) => {
+              // 2. Filter Audios that contain at least one selected phrase (if phrases selected)
+              if (selectedPhrases.length === 0) return true;
+              return items.some(i => selectedPhrases.includes(i.target_phrase));
+          });
+
+          if (filteredAudioEntries.length === 0) return null;
+
+          return (
           <div key={radioName} className="space-y-4">
             <h3 className="text-lg font-semibold text-blue-700 flex items-center gap-2">
               <Radio className="w-5 h-5" />
@@ -695,12 +734,21 @@ export default function SummaryDetailPage() {
             </h3>
             
             <div className="grid gap-6">
-              {Object.entries(audioGroups).map(([audioPath, items]) => {
+              {filteredAudioEntries.map(([audioPath, items]) => {
                 // Get metadata from the first item (all items in this group share audio/folder)
                 const firstItem = items[0];
                 const fileName = audioPath.split('/').pop() || 'Audio sin nombre';
                 const folderName = firstItem.drive_folder_name || 'Carpeta Principal';
                 const hasMatch = items.some(i => i.is_match);
+
+                // Filter displayed items if phrases selected (optional, but requested "filter")
+                // If phrases are selected, show only those rows? 
+                // "mostrar solo los audios de X Radios y tambien un filtro de frases"
+                // Usually means show context of those phrases.
+                // Let's filter the list of items shown below the player.
+                const displayedItems = selectedPhrases.length > 0 
+                    ? items.filter(i => selectedPhrases.includes(i.target_phrase))
+                    : items;
 
                 return (
                   <div key={audioPath} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -729,7 +777,7 @@ export default function SummaryDetailPage() {
                          <SmartAudioTimeline 
                              className="mt-0 bg-white"
                              audioPath={audioPath} 
-                             markers={items.filter(i => i.is_match).map(i => ({
+                             markers={items.filter(i => i.is_match && (selectedPhrases.length === 0 || selectedPhrases.includes(i.target_phrase))).map(i => ({
                                  id: i.id,
                                  label: i.target_phrase,
                                  start: parseSeconds(i.timestamp_start) || 0,
@@ -741,7 +789,7 @@ export default function SummaryDetailPage() {
 
                     {/* Verifications List */}
                     <div className="divide-y divide-gray-100">
-                      {items.map((item, idx) => (
+                      {displayedItems.map((item, idx) => (
                         <div key={idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors">
                            <div className="flex-1">
                              <div className="flex items-center gap-2 mb-1">
@@ -791,7 +839,8 @@ export default function SummaryDetailPage() {
               })}
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
       {/* Hidden Print Template - Page 1: Header, KPIs, Timeline */}
       <div 
