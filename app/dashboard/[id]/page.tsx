@@ -190,7 +190,7 @@ export default function RadioPage() {
          const { data: assignment } = await supabase
             .from('radio_assignments')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('admin_id', user.id)
             .eq('radio_id', id)
             .single();
          
