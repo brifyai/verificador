@@ -13,7 +13,7 @@ export function extractBroadcastDateTime(filename: string): { date: string | nul
   if (match1) {
       return {
           date: `${match1[1]}-${match1[2]}-${match1[3]}`,
-          time: `${match1[4]}:${match1[5]}:00`
+          time: `${match1[4]}:${match1[5]}`
       };
   }
 
@@ -24,7 +24,7 @@ export function extractBroadcastDateTime(filename: string): { date: string | nul
   if (match2) {
       return {
            date: `${match2[1]}-${match2[2]}-${match2[3]}`,
-           time: `${match2[4]}:${match2[5]}:00`
+           time: `${match2[4]}:${match2[5]}`
       };
   }
 

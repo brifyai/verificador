@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, FileAudio, Plus, XCircle } from 'lucide-react';
 import { PhraseSelector } from './PhraseSelector';
 import { toast } from 'sonner';
+import { extractBroadcastDateTime } from '@/lib/utils';
 
 interface PendingVerificationItemProps {
   verification: any;
@@ -24,8 +25,12 @@ export function PendingVerificationItem({
 }: PendingVerificationItemProps) {
   const [phrases, setPhrases] = useState<{ text: string; save: boolean }[]>([{ text: '', save: false }]);
   const [localProcessing, setLocalProcessing] = useState(false);
-  const [broadcastTime, setBroadcastTime] = useState('');
-  const [broadcastDate, setBroadcastDate] = useState('');
+  
+  // Initialize with detected values if available, or try to extract from filename
+  const { date: extractedDate, time: extractedTime } = extractBroadcastDateTime(v.drive_file_name || '');
+  
+  const [broadcastTime, setBroadcastTime] = useState(v.broadcast_time || extractedTime || '');
+  const [broadcastDate, setBroadcastDate] = useState(v.broadcast_date || extractedDate || '');
 
   const handlePhraseChange = (index: number, text: string) => {
     const newPhrases = [...phrases];

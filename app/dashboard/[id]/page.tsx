@@ -227,8 +227,15 @@ export default function RadioPage() {
           const next = { ...prev };
           let changed = false;
           verifications.forEach(v => {
-              if (v.status === 'pending' && v.broadcast_time && !next[v.id]) {
-                  next[v.id] = v.broadcast_time;
+              // Priority: DB value -> Extracted from filename
+              let time = v.broadcast_time;
+              if (!time && v.status === 'pending') {
+                 const { time: t } = extractBroadcastDateTime(v.drive_file_name || '');
+                 time = t;
+              }
+
+              if (v.status === 'pending' && time && !next[v.id]) {
+                  next[v.id] = time;
                   changed = true;
               }
           });
@@ -239,8 +246,15 @@ export default function RadioPage() {
           const next = { ...prev };
           let changed = false;
           verifications.forEach(v => {
-              if (v.status === 'pending' && v.broadcast_date && !next[v.id]) {
-                  next[v.id] = v.broadcast_date;
+              // Priority: DB value -> Extracted from filename
+              let date = v.broadcast_date;
+              if (!date && v.status === 'pending') {
+                 const { date: d } = extractBroadcastDateTime(v.drive_file_name || '');
+                 date = d;
+              }
+
+              if (v.status === 'pending' && date && !next[v.id]) {
+                  next[v.id] = date;
                   changed = true;
               }
           });
