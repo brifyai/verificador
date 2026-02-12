@@ -49,7 +49,7 @@ export default function DashboardPage() {
         const { data: assignments, error: assignError } = await supabase
             .from('radio_assignments')
             .select('radio_id')
-            .eq('user_id', user.id);
+            .eq('admin_id', user.id);
 
         if (assignError) {
             console.error(assignError);
