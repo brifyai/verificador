@@ -602,7 +602,7 @@ export default function SummaryDetailPage() {
                         cy="50%"
                         outerRadius={100}
                         fill="#8884d8"
-                        label={({ percent }: { percent: number }) => `${(percent * 100).toFixed(0)}%`}
+                        label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
                         labelLine={false}
                     >
                         {innerData.map((entry, index) => (
@@ -996,7 +996,7 @@ export default function SummaryDetailPage() {
                           outerRadius={110}
                           fill="#8884d8"
                           isAnimationActive={false}
-                          label={({ percent }: { percent: number }) => `${(percent * 100).toFixed(0)}%`}
+                          label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
                           labelLine={false}
                       >
                           {innerData.map((entry, index) => (
