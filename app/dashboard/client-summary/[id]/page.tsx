@@ -629,14 +629,14 @@ export default function SummaryDetailPage() {
                         ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend payload={
+                    <Legend {...({ payload:
                         innerData.map((item, index) => ({
                             id: item.name,
                             type: 'square',
                             value: `${item.name}`,
                             color: colors[index % colors.length]
                         }))
-                    } />
+                    } as any)} />
                 </PieChart>
             </ResponsiveContainer>
         </div>
