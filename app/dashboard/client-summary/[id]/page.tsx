@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
 import { SummaryAudioPlayer } from '@/components/SummaryAudioPlayer';
+import { SmartAudioTimeline } from '@/components/SmartAudioTimeline';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend, PieChart, Pie, Cell } from 'recharts';
 
 interface VerificationData {
@@ -724,9 +725,18 @@ export default function SummaryDetailPage() {
                       </div>
                       
                       {/* Full Audio Player */}
-                      <div className="w-full md:w-auto md:min-w-[300px]">
-                        <SummaryAudioPlayer audioPath={audioPath} />
-                      </div>
+                      <div className="w-full md:flex-1 md:ml-8">
+                         <SmartAudioTimeline 
+                             className="mt-0 bg-white"
+                             audioPath={audioPath} 
+                             markers={items.filter(i => i.is_match).map(i => ({
+                                 id: i.id,
+                                 label: i.target_phrase,
+                                 start: parseSeconds(i.timestamp_start) || 0,
+                                 end: parseSeconds(i.timestamp_end) || 0
+                             }))}
+                         />
+                       </div>
                     </div>
 
                     {/* Verifications List */}

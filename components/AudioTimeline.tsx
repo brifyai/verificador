@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Marker {
   id: string;
@@ -13,9 +14,10 @@ interface Marker {
 interface AudioTimelineProps {
   audioUrl: string;
   markers: Marker[];
+  className?: string;
 }
 
-export function AudioTimeline({ audioUrl, markers }: AudioTimelineProps) {
+export function AudioTimeline({ audioUrl, markers, className }: AudioTimelineProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -61,7 +63,7 @@ export function AudioTimeline({ audioUrl, markers }: AudioTimelineProps) {
   };
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mt-4">
+    <div className={cn("bg-gray-50 rounded-lg p-4 border border-gray-200 mt-4", className)}>
       <audio
         ref={audioRef}
         src={audioUrl}
