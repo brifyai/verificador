@@ -888,7 +888,9 @@ export default function RadioPage() {
     const validPhrases = phrases.filter(p => p.text.trim() !== '');
     if (!file || validPhrases.length === 0) return;
     setProcessing(true);
-    setProcessingId(null);
+    // Use manual-upload ID for state tracking
+    const manualUploadId = 'manual-upload';
+    setProcessingStates(prev => ({ ...prev, [manualUploadId]: { progress: 0, message: 'Iniciando subida...' } }));
 
     try {
       // 0. Save phrases
@@ -924,8 +926,7 @@ export default function RadioPage() {
       });
 
       const data = await readStream(res, (p, msg) => {
-        setProgress(p);
-        if (msg) setProgressMessage(msg);
+        setProcessingStates(prev => ({ ...prev, [manualUploadId]: { progress: p, message: msg || '' } }));
       });
       
       if (!data.success) throw new Error(data.error);
@@ -958,7 +959,7 @@ export default function RadioPage() {
 
       if (dbError) throw dbError;
 
-      setProgress(100);
+      setProcessingStates(prev => ({ ...prev, [manualUploadId]: { progress: 100, message: 'Completado' } }));
       toast.success(`Verificación completada. ${results.filter((r: any) => r.is_match).length} coincidencias encontradas.`);
       setFile(null);
       setPhrases([{ text: '', save: false }]);
@@ -968,10 +969,16 @@ export default function RadioPage() {
 
     } catch (error: any) {
       toast.error(error.message);
-      setProgress(0);
+      setProcessingStates(prev => ({ ...prev, [manualUploadId]: { progress: 0, message: 'Error' } }));
     } finally {
       setProcessing(false);
-      setTimeout(() => setProgress(0), 3000); 
+      setTimeout(() => {
+          setProcessingStates(prev => {
+              const next = { ...prev };
+              delete next[manualUploadId];
+              return next;
+          });
+      }, 3000); 
     }
   };
 
