@@ -119,9 +119,9 @@ export default function RadioPage() {
   const [savedPhrases, setSavedPhrases] = useState<any[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [processingId, setProcessingId] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [progressMessage, setProgressMessage] = useState('');
+  // Replaced single ID with map for concurrent processing support
+  const [processingStates, setProcessingStates] = useState<Record<string, { progress: number, message: string }>>({});
+  
   const [transcriptionModalOpen, setTranscriptionModalOpen] = useState(false);
   const [currentTranscription, setCurrentTranscription] = useState('');
 
@@ -638,9 +638,26 @@ export default function RadioPage() {
     }
   };
 
-  const handlePendingVerify = async (verificationId: string, driveFileId: string, phrasesList: { text: string; save: boolean }[], batchId?: string, broadcastTimeVal?: string, broadcastDateVal?: string) => {
-    setProcessing(true);
-    setProcessingId(verificationId);
+  const handlePendingVerify = async (
+    verificationId: string, 
+    driveFileId: string, 
+    phrasesList: { text: string; save: boolean }[], 
+    batchId?: string, 
+    broadcastTimeVal?: string, 
+    broadcastDateVal?: string,
+    onProgress?: (p: number, msg: string) => void // Callback for progress
+  ) => {
+    // Only set global state if not part of a concurrent batch (or if no callback provided)
+    const isConcurrent = !!onProgress;
+    
+    if (!isConcurrent) {
+        setProcessing(true);
+        // setProcessingId(verificationId); // Deprecated
+        setProcessingStates(prev => ({ ...prev, [verificationId]: { progress: 0, message: 'Iniciando...' } }));
+    } else {
+        // Init state for concurrent
+        setProcessingStates(prev => ({ ...prev, [verificationId]: { progress: 0, message: 'En cola...' } }));
+    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -668,8 +685,14 @@ export default function RadioPage() {
       });
 
       const data = await readStream(res, (p, msg) => {
-        setProgress(p);
-        if (msg) setProgressMessage(msg);
+        if (!isConcurrent) {
+            // setProgress(p);
+            // if (msg) setProgressMessage(msg);
+            setProcessingStates(prev => ({ ...prev, [verificationId]: { progress: p, message: msg || '' } }));
+        } else {
+            if (onProgress) onProgress(p, msg || '');
+            setProcessingStates(prev => ({ ...prev, [verificationId]: { progress: p, message: msg || '' } }));
+        }
       });
 
       if (!data.success) throw new Error(data.error);
@@ -846,8 +869,17 @@ export default function RadioPage() {
       toast.error('Error: ' + error.message);
       throw error; // Re-throw for batch handling
     } finally {
-      setProcessing(false);
-      setProcessingId(null);
+      if (!isConcurrent) {
+        setProcessing(false);
+        setProcessingStates(prev => {
+             const next = { ...prev };
+             delete next[verificationId];
+             return next;
+        });
+      } else {
+        // Mark as done for concurrent view
+        setProcessingStates(prev => ({ ...prev, [verificationId]: { progress: 100, message: 'Completado' } }));
+      }
     }
   };
 
@@ -1007,17 +1039,20 @@ export default function RadioPage() {
                 total_files: selectedPendingIds.length,
                 status: 'processing',
                 name: finalBatchName,
-                broadcast_time: batchBroadcastTime,
-                broadcast_date: batchBroadcastDate
+                broadcast_time: batchBroadcastTime || null, // Handle empty string
+                broadcast_date: batchBroadcastDate || null  // Handle empty string
             })
             .select()
             .single();
         
-        if (!batchError && batchData) {
+        if (batchError) {
+            console.error("Error creating batch job:", batchError);
+            toast.error("No se pudo crear el registro del lote. La verificación continuará sin seguimiento de lote.");
+        } else if (batchData) {
             batchId = batchData.id;
         }
     } catch (e) {
-        console.warn("Batch logging disabled (table batch_jobs might not exist).");
+        console.error("Exception creating batch job:", e);
     }
 
     // 1. Save phrases once globally for the batch
@@ -1029,65 +1064,99 @@ export default function RadioPage() {
     // 2. Use phrases with save=false to avoid redundant saving in loop
     const phrasesForProcessing = validPhrases.map(p => ({ ...p, save: false }));
 
-    // Process sequentially
-    for (let i = 0; i < selectedPendingIds.length; i++) {
-        const verificationId = selectedPendingIds[i];
-        setBatchProgress({ current: i + 1, total: selectedPendingIds.length });
-        
-        const verification = verifications.find(v => v.id === verificationId);
-        if (!verification) continue;
-
-        try {
-            const itemBroadcastTime = batchItemTimes[verificationId] || batchBroadcastTime;
-            const itemBroadcastDate = batchItemDates[verificationId] || batchBroadcastDate;
-            // @ts-ignore
-            const result = await handlePendingVerify(verificationId, verification.drive_file_id, phrasesForProcessing, batchId || undefined, itemBroadcastTime, itemBroadcastDate);
+    // Process concurrently with a pool
+    const CONCURRENCY = 2; // Optimal for 1 RunPod worker + Pipelining
+    
+    // Helper for concurrency
+    let currentIndex = 0;
+    let completedCount = 0;
+    
+    const processNext = async () => {
+        while (currentIndex < selectedPendingIds.length) {
+            const index = currentIndex++;
+            const verificationId = selectedPendingIds[index];
+            const verification = verifications.find(v => v.id === verificationId);
             
-            if (result && result.processingSeconds) {
-                totalProcessingSeconds += result.processingSeconds;
-            }
-            successfulItems++;
-
-            // Update batch job progress periodically
-            if (batchId) {
-                 await supabase
-                    .from('batch_jobs')
-                    .update({ 
-                        processed_files: i + 1,
-                        total_processing_seconds: totalProcessingSeconds,
-                        estimated_cost: totalProcessingSeconds * 0.00031
-                    })
-                    .eq('id', batchId);
+            if (!verification) {
+                completedCount++;
+                setBatchProgress({ current: completedCount, total: selectedPendingIds.length });
+                continue;
             }
 
-        } catch (error: any) {
-            console.error(`Error verifying ${verificationId}:`, error);
-            failedItems++;
-            
-            // Record error in database
             try {
-                await supabase
-                    .from('verifications')
-                    .update({ 
-                        status: 'error',
-                        transcription: `Error en verificación: ${error.message || 'Error desconocido'}`,
-                        batch_id: batchId
-                    })
-                    .eq('id', verificationId);
+                const itemBroadcastTime = batchItemTimes[verificationId] || batchBroadcastTime;
+                const itemBroadcastDate = batchItemDates[verificationId] || batchBroadcastDate;
+                
+                // Pass a callback to handle progress updates locally without affecting global state incorrectly
+                // @ts-ignore
+                const result = await handlePendingVerify(
+                    verificationId, 
+                    verification.drive_file_id, 
+                    phrasesForProcessing, 
+                    batchId || undefined, 
+                    itemBroadcastTime, 
+                    itemBroadcastDate,
+                    (p, msg) => {
+                         // Optional: could update a detailed status map here if we wanted to show individual progress
+                    }
+                );
+                
+                if (result && result.processingSeconds) {
+                    totalProcessingSeconds += result.processingSeconds;
+                }
+                successfulItems++;
 
-                // Optimistic update
-                setVerifications(prev => prev.map(v => 
-                    v.id === verificationId ? { 
-                        ...v, 
-                        status: 'error', 
-                        transcription: `Error en verificación: ${error.message || 'Error desconocido'}` 
-                    } : v
-                ));
-            } catch (updateError) {
-                console.error("Failed to update error status", updateError);
+                // Update batch job progress periodically
+                if (batchId) {
+                     await supabase
+                        .from('batch_jobs')
+                        .update({ 
+                            processed_files: successfulItems, // Use actual success count
+                            total_processing_seconds: totalProcessingSeconds,
+                            estimated_cost: totalProcessingSeconds * 0.00031
+                        })
+                        .eq('id', batchId);
+                }
+
+            } catch (error: any) {
+                console.error(`Error verifying ${verificationId}:`, error);
+                failedItems++;
+                
+                // Record error in database
+                try {
+                    await supabase
+                        .from('verifications')
+                        .update({ 
+                            status: 'error',
+                            transcription: `Error en verificación: ${error.message || 'Error desconocido'}`,
+                            batch_id: batchId
+                        })
+                        .eq('id', verificationId);
+
+                    // Optimistic update
+                    setVerifications(prev => prev.map(v => 
+                        v.id === verificationId ? { 
+                            ...v, 
+                            status: 'error', 
+                            transcription: `Error en verificación: ${error.message || 'Error desconocido'}` 
+                        } : v
+                    ));
+                } catch (updateError) {
+                    console.error("Failed to update error status", updateError);
+                }
+            } finally {
+                completedCount++;
+                setBatchProgress({ current: completedCount, total: selectedPendingIds.length });
             }
         }
-    }
+    };
+
+    // Start pool
+    const pool = Array(Math.min(CONCURRENCY, selectedPendingIds.length))
+        .fill(null)
+        .map(() => processNext());
+        
+    await Promise.all(pool);
 
     const endTime = Date.now();
     const totalDurationSeconds = (endTime - startTime) / 1000;
