@@ -91,6 +91,19 @@ export default function DashboardLayout({
                       Mis Radios
                     </Link>
                   )}
+
+                  {role !== 'client' && (
+                    <Link
+                      href="/dashboard/my-summaries"
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        pathname === '/dashboard/my-summaries' 
+                          ? 'bg-blue-50 text-blue-600' 
+                          : 'text-gray-700 hover:bg-gray-50 hover:text-blue-600'
+                      }`}
+                    >
+                      Mis Resúmenes
+                    </Link>
+                  )}
                   
                   {role === 'super_admin' && (
                     <Link

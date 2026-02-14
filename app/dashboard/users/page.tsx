@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Loader2, Plus, User, Shield, Radio, Check } from 'lucide-react';
+import { Loader2, Plus, User, Shield, Radio, Check, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Profile {
@@ -22,7 +22,9 @@ export default function UsersPage() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   
   // Form State
   const [email, setEmail] = useState('');
@@ -30,6 +32,9 @@ export default function UsersPage() {
   const [role, setRole] = useState<'admin' | 'client'>('admin');
   const [availableRadios, setAvailableRadios] = useState<RadioType[]>([]);
   const [selectedRadios, setSelectedRadios] = useState<string[]>([]);
+  
+  // Edit State
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -111,6 +116,59 @@ export default function UsersPage() {
     );
   };
 
+  const handleEditClick = async (user: Profile) => {
+    setEditingUser(user);
+    setSelectedRadios([]);
+    setShowEditModal(true);
+
+    // Fetch current assignments
+    // Note: We need a way to fetch this. RLS allows super_admin to read assignments.
+    // Assuming the current user is super_admin if they are on this page.
+    const { data: assignments } = await supabase
+        .from('radio_assignments')
+        .select('radio_id')
+        .eq('admin_id', user.id);
+    
+    if (assignments) {
+        setSelectedRadios(assignments.map(a => a.radio_id));
+    }
+  };
+
+  const handleUpdateAssignments = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setUpdating(true);
+
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('No sesión');
+
+        const response = await fetch('/api/admin/users/update-radios', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+                userId: editingUser.id,
+                assignedRadios: selectedRadios
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error al actualizar');
+
+        toast.success('Asignaciones actualizadas');
+        setShowEditModal(false);
+        setEditingUser(null);
+        setSelectedRadios([]);
+    } catch (error: any) {
+        toast.error(error.message);
+    } finally {
+        setUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -142,6 +200,7 @@ export default function UsersPage() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Registro</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
@@ -167,11 +226,75 @@ export default function UsersPage() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {new Date(user.created_at).toLocaleDateString()}
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  {user.role === 'admin' && (
+                    <button
+                      onClick={() => handleEditClick(user)}
+                      className="text-blue-600 hover:text-blue-900"
+                      title="Editar asignaciones"
+                    >
+                      <Edit className="h-5 w-5" />
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {showEditModal && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Editar Asignaciones</h2>
+            <p className="text-sm text-gray-500 mb-4">
+                Gestionar radios para: <strong>{editingUser.email}</strong>
+            </p>
+            <form onSubmit={handleUpdateAssignments} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Radios Asignadas</label>
+                  <div className="max-h-60 overflow-y-auto space-y-2 border rounded-md p-2">
+                    {availableRadios.map(radio => (
+                      <div key={radio.id} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`edit-radio-${radio.id}`}
+                          checked={selectedRadios.includes(radio.id)}
+                          onChange={() => toggleRadio(radio.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor={`edit-radio-${radio.id}`} className="ml-2 text-sm text-gray-900">
+                          {radio.name}
+                        </label>
+                      </div>
+                    ))}
+                    {availableRadios.length === 0 && (
+                      <p className="text-sm text-gray-500 italic">No hay radios disponibles</p>
+                    )}
+                  </div>
+                </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating}
+                  className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {updating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">

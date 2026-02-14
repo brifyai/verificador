@@ -145,6 +145,12 @@ export default function SummaryDetailPage() {
     }
   });
 
+  // Generate unique phrases and map to indices for consistent Y-axis plotting
+  const uniquePhrases = Array.from(new Set(scatterData.map(d => d.phrase))).sort();
+  scatterData.forEach(d => {
+      d.phraseIndex = uniquePhrases.indexOf(d.phrase);
+  });
+
   const radiosList = Array.from(radiosSet);
   const colors = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#9333ea', '#0891b2']; // Blue, Green, Red, Orange, Purple, Cyan
 
@@ -568,11 +574,15 @@ export default function SummaryDetailPage() {
                     unit="" 
                   />
                   <YAxis 
-                    type="category" 
-                    dataKey="phrase" 
+                    type="number" 
+                    dataKey="phraseIndex" 
                     name="Frase" 
-                    width={100}
+                    width={150}
                     tick={{fontSize: 12}}
+                    domain={[-1, uniquePhrases.length]}
+                    ticks={uniquePhrases.map((_, i) => i)}
+                    tickFormatter={(i) => uniquePhrases[i] || ''}
+                    interval={0}
                   />
                   <ZAxis type="number" range={[100, 100]} />
                   <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
