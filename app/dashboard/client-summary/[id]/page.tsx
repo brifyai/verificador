@@ -14,7 +14,7 @@ import { toPng } from 'html-to-image';
 import { SummaryAudioPlayer } from '@/components/SummaryAudioPlayer';
 import { SmartAudioTimeline } from '@/components/SmartAudioTimeline';
 import { FilterMultiSelect } from '@/components/FilterMultiSelect';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend, PieChart, Pie, Cell } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 interface VerificationData {
   id: string;
@@ -46,6 +46,8 @@ export default function SummaryDetailPage() {
   const [isExporting, setIsExporting] = useState(false); // To handle PDF export visibility
   const [selectedRadios, setSelectedRadios] = useState<string[]>([]);
   const [selectedPhrases, setSelectedPhrases] = useState<string[]>([]);
+  const [chartRadios, setChartRadios] = useState<string[]>([]);
+  const [chartPhrases, setChartPhrases] = useState<string[]>([]);
 
   useEffect(() => {
     if (params.id) {
@@ -84,6 +86,30 @@ export default function SummaryDetailPage() {
     return 0;
   };
 
+  useEffect(() => {
+    if (!summary) return;
+    if (chartRadios.length > 0 || chartPhrases.length > 0) return;
+
+    const phraseCounts: Record<string, number> = {};
+    const radiosSet = new Set<string>();
+
+    summary.data.forEach(v => {
+      if (!v.is_match) return;
+      const phrase = v.target_phrase;
+      const radioName = v.radios?.name || 'Radio Desconocida';
+      phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
+      radiosSet.add(radioName);
+    });
+
+    const sortedPhrases = Object.keys(phraseCounts).sort(
+      (a, b) => (phraseCounts[b] || 0) - (phraseCounts[a] || 0)
+    );
+    const sortedRadios = Array.from(radiosSet).sort();
+
+    setChartPhrases(sortedPhrases.slice(0, 5));
+    setChartRadios(sortedRadios.slice(0, 10));
+  }, [summary, chartRadios.length, chartPhrases.length]);
+
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
   if (!summary) return <div className="p-8">Reporte no encontrado.</div>;
 
@@ -107,15 +133,44 @@ export default function SummaryDetailPage() {
     const radioName = v.radios?.name || 'Radio Desconocida';
     const audioKey = v.audio_path;
 
-    // Stats
     if (!radioStats[radioName]) radioStats[radioName] = { total: 0, matches: 0 };
     radioStats[radioName].total++;
     if (v.is_match) radioStats[radioName].matches++;
 
-    // Grouping
     if (!groupedData[radioName]) groupedData[radioName] = {};
     if (!groupedData[radioName][audioKey]) groupedData[radioName][audioKey] = [];
     groupedData[radioName][audioKey].push(v);
+  });
+
+  const phraseRadioCounts: Record<string, Record<string, number>> = {};
+  const phraseTotals: Record<string, number> = {};
+
+  summary.data.forEach(v => {
+    if (!v.is_match) return;
+    const phrase = v.target_phrase;
+    const radioName = v.radios?.name || 'Radio Desconocida';
+    if (!phraseRadioCounts[phrase]) phraseRadioCounts[phrase] = {};
+    phraseRadioCounts[phrase][radioName] = (phraseRadioCounts[phrase][radioName] || 0) + 1;
+    phraseTotals[phrase] = (phraseTotals[phrase] || 0) + 1;
+  });
+
+  const chartPhrasesToShow = (chartPhrases.length > 0 ? chartPhrases : Object.keys(phraseRadioCounts)).filter(
+    phrase => Object.prototype.hasOwnProperty.call(phraseRadioCounts, phrase)
+  );
+  const chartRadiosToShow = (chartRadios.length > 0 ? chartRadios : allRadios).filter(
+    radio => allRadios.includes(radio)
+  );
+
+  const phraseRadioBarData = chartPhrasesToShow.map(phrase => {
+    const radioCounts = phraseRadioCounts[phrase] || {};
+    const row: Record<string, number | string> = {
+      phrase,
+      total: phraseTotals[phrase] || 0,
+    };
+    chartRadiosToShow.forEach(radioName => {
+      row[radioName] = radioCounts[radioName] || 0;
+    });
+    return row;
   });
 
   // Prepare Scatter Chart Data (Matches over Time)
@@ -551,6 +606,52 @@ export default function SummaryDetailPage() {
           <div className="mt-2 text-3xl font-bold text-blue-600">{matchRate}%</div>
         </div>
       </div>
+
+      {phraseRadioBarData.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-gray-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Distribución de frases por radio</h2>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <FilterMultiSelect
+                label="Frases (máx. 10)"
+                options={allPhrases}
+                selected={chartPhrases}
+                onChange={(values) => setChartPhrases(values.slice(0, 10))}
+                placeholder="Selecciona hasta 10 frases"
+              />
+              <FilterMultiSelect
+                label="Radios (máx. 10)"
+                options={allRadios}
+                selected={chartRadios}
+                onChange={(values) => setChartRadios(values.slice(0, 10))}
+                placeholder="Selecciona hasta 10 radios"
+              />
+            </div>
+          </div>
+          <div className="h-[400px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={phraseRadioBarData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="phrase" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                {chartRadiosToShow.map((radioName, index) => (
+                  <Bar
+                    key={radioName}
+                    dataKey={radioName}
+                    stackId="a"
+                    fill={colors[index % colors.length]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Timeline Chart */}
       {scatterData.length > 0 && (
