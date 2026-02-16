@@ -285,8 +285,9 @@ export default function SummaryDetailPage() {
   const handleExportPDF = async () => {
     const printPage1 = document.getElementById('print-page-1');
     const printPage2 = document.getElementById('print-page-2');
+    const printPage3 = document.getElementById('print-page-3');
     
-    if (!printPage1 || !printPage2 || !summary) return;
+    if (!printPage1 || !printPage2 || !printPage3 || !summary) return;
     
     setIsExporting(true);
     // Wait for render cycle
@@ -318,7 +319,7 @@ export default function SummaryDetailPage() {
         const pdfImgHeight1 = (imgProps1.height * pdfWidth) / imgProps1.width;
         pdf.addImage(dataUrl1, 'PNG', 0, 0, pdfWidth, pdfImgHeight1);
 
-        // --- Page 2: Distribution & Performance ---
+        // --- Page 2: Distribution ---
         pdf.addPage();
         const dataUrl2 = await toPng(printPage2, { 
             pixelRatio: 2,
@@ -339,7 +340,28 @@ export default function SummaryDetailPage() {
         const pdfImgHeight2 = (imgProps2.height * pdfWidth) / imgProps2.width;
         pdf.addImage(dataUrl2, 'PNG', 0, 0, pdfWidth, pdfImgHeight2);
         
-        // --- Page 3+: Data Table ---
+        // --- Page 3: Distribución de frases por radio ---
+        pdf.addPage();
+        const dataUrl3 = await toPng(printPage3, { 
+            pixelRatio: 2,
+            backgroundColor: '#ffffff',
+            width: 794,
+            height: 1123,
+            style: {
+                visibility: 'visible',
+                position: 'fixed',
+                zIndex: '9999',
+                left: '0',
+                top: '0',
+                transform: 'none'
+            }
+        });
+
+        const imgProps3 = (pdf as any).getImageProperties(dataUrl3);
+        const pdfImgHeight3 = (imgProps3.height * pdfWidth) / imgProps3.width;
+        pdf.addImage(dataUrl3, 'PNG', 0, 0, pdfWidth, pdfImgHeight3);
+        
+        // --- Page 4+: Data Table ---
         const tableRows: any[] = [];
         Object.entries(groupedData).forEach(([radioName, audioGroups]) => {
             Object.entries(audioGroups).forEach(([audioPath, items]) => {
@@ -678,8 +700,8 @@ export default function SummaryDetailPage() {
                     type="number" 
                     dataKey="phraseIndex" 
                     name="Frase" 
-                    width={150}
-                    tick={{fontSize: 12}}
+                    width={120}
+                    tick={{fontSize: 11}}
                     domain={[-1, uniquePhrases.length]}
                     ticks={uniquePhrases.map((_, i) => i)}
                     tickFormatter={(i) => uniquePhrases[i] || ''}
@@ -687,7 +709,7 @@ export default function SummaryDetailPage() {
                   />
                   <ZAxis type="number" range={[100, 100]} />
                   <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                  <Legend />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
                   {radiosList.map((radio, index) => (
                       <Scatter 
                         key={radio} 
@@ -982,27 +1004,27 @@ export default function SummaryDetailPage() {
           </div>
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-3 gap-6 mb-8">
-              <div className="bg-gray-50 p-4 rounded border border-gray-200 text-center">
-                  <div className="text-xs text-gray-500 uppercase mb-1">Total Audios</div>
-                  <div className="text-2xl font-bold text-gray-900">{totalAudios}</div>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-gray-50 p-3 rounded border border-gray-200 text-center">
+                  <div className="text-[10px] text-gray-500 uppercase mb-1">Total Audios</div>
+                  <div className="text-xl font-bold text-gray-900">{totalAudios}</div>
               </div>
-              <div className="bg-green-50 p-4 rounded border border-green-200 text-center">
-                  <div className="text-xs text-green-700 uppercase mb-1">Coincidencias</div>
-                  <div className="text-2xl font-bold text-green-700">{matches}</div>
+              <div className="bg-green-50 p-3 rounded border border-green-200 text-center">
+                  <div className="text-[10px] text-green-700 uppercase mb-1">Coincidencias</div>
+                  <div className="text-xl font-bold text-green-700">{matches}</div>
               </div>
-              <div className="bg-blue-50 p-4 rounded border border-blue-200 text-center">
-                  <div className="text-xs text-blue-700 uppercase mb-1">Verificaciones</div>
-                  <div className="text-2xl font-bold text-blue-700">{totalVerifications}</div>
+              <div className="bg-blue-50 p-3 rounded border border-blue-200 text-center">
+                  <div className="text-[10px] text-blue-700 uppercase mb-1">Verificaciones</div>
+                  <div className="text-xl font-bold text-blue-700">{totalVerifications}</div>
               </div>
           </div>
 
           {/* Timeline Chart - Custom HTML/CSS Implementation for reliable PDF export */}
-          <div className="border border-gray-200 rounded p-4 mb-8 w-full max-w-[750px] mx-auto bg-white">
+          <div className="border border-gray-200 rounded p-4 mb-6 w-full max-w-[750px] mx-auto bg-white">
               <h3 className="text-lg font-bold text-gray-800 mb-6 text-center">Línea de Tiempo de Coincidencias</h3>
               
               {/* Flex Container for Labels + Chart */}
-              <div className="flex h-[350px] mb-8 relative">
+              <div className="flex h-[300px] mb-6 relative">
                   {/* Dynamic Calculation */}
                   {(() => {
                       const times = scatterData.map(d => d.time);
@@ -1020,13 +1042,13 @@ export default function SummaryDetailPage() {
                       return (
                         <>
                           {/* Left Column: Y-Axis Labels */}
-                          <div className="w-[220px] h-full border-r border-gray-300 relative flex-shrink-0">
+                          <div className="w-[180px] h-full border-r border-gray-300 relative flex-shrink-0">
                               {phrasesList.map((phrase, index) => {
                                   const topPos = ((index + 0.5) / phrasesList.length) * 100;
                                   return (
                                       <div 
                                           key={phrase} 
-                                          className="absolute w-full px-2 text-[10px] font-bold text-gray-600 text-right truncate flex items-center justify-end h-4"
+                                          className="absolute w-full px-2 text-[9px] font-bold text-gray-600 text-right truncate flex items-center justify-end h-4"
                                           style={{ top: `${topPos}%`, transform: 'translateY(-50%)' }}
                                           title={phrase}
                                       >
@@ -1104,11 +1126,12 @@ export default function SummaryDetailPage() {
                               className="w-3 h-3 rounded-full" 
                               style={{ backgroundColor: colors[index % colors.length] }}
                           ></div>
-                          <span className="text-[10px] font-medium text-gray-600 uppercase">{radio}</span>
+                          <span className="text-[8px] font-medium text-gray-600 uppercase">{radio}</span>
                       </div>
                   ))}
               </div>
           </div>
+          
 
           {/* Performance Bars (Moved to Page 1 to balance) */}
           <div className="border border-gray-200 rounded p-6">
@@ -1241,6 +1264,54 @@ export default function SummaryDetailPage() {
                   </div>
               </div>
            </div>
+      </div>
+
+      <div 
+        id="print-page-3" 
+        style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: isExporting ? 0 : '-9999px', 
+            width: '794px', 
+            minHeight: '1123px',
+            backgroundColor: 'white', 
+            padding: '40px 40px 80px 40px', 
+            fontFamily: 'Arial, sans-serif',
+            zIndex: isExporting ? 9999 : -1,
+            visibility: isExporting ? 'visible' : 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+            alignItems: 'center'
+        }}
+      >
+        {phraseRadioBarData.length > 0 && (
+          <div className="border border-gray-200 rounded p-4 mt-8 w-full max-w-[700px] mx-auto bg-white">
+            <h4 className="text-base font-bold text-gray-800 mb-3 text-center">
+              Distribución de frases por radio
+            </h4>
+            <div className="w-full h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={phraseRadioBarData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="phrase" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  {chartRadiosToShow.map((radioName, index) => (
+                    <Bar
+                      key={radioName}
+                      dataKey={radioName}
+                      stackId="print2"
+                      fill={colors[index % colors.length]}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
