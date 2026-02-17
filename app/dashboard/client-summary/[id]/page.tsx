@@ -421,8 +421,10 @@ export default function SummaryDetailPage() {
 
         const printPage1 = document.getElementById('print-page-1');
         const printPage2 = document.getElementById('print-page-2');
+        const printPage3 = document.getElementById('print-page-3');
+        const chartBarsEl = document.getElementById('print-chart-bars');
 
-        if (!printPage1 || !printPage2) {
+        if (!printPage1 || !printPage2 || !printPage3 || !chartBarsEl) {
             console.error("Export elements not found");
             return;
         }
@@ -430,6 +432,7 @@ export default function SummaryDetailPage() {
         // Capture images
         const dataUrl1 = await toPng(printPage1, { pixelRatio: 2, backgroundColor: '#ffffff' });
         const dataUrl2 = await toPng(printPage2, { pixelRatio: 2, backgroundColor: '#ffffff' });
+        const dataUrl3 = await toPng(chartBarsEl as HTMLElement, { pixelRatio: 2, backgroundColor: '#ffffff' });
 
         // Create Workbook
         const workbook = new ExcelJS.Workbook();
@@ -511,6 +514,50 @@ export default function SummaryDetailPage() {
             ext: { width: 794, height: 1123 }
         });
 
+        // --- Sheet 2: Distribución por Radio (Bar Chart + Selecciones) ---
+        const sheetDist = workbook.addWorksheet('Distribución por Radio');
+        sheetDist.getColumn(1).width = 25;
+
+        sheetDist.mergeCells('A1:D1');
+        const distTitle = sheetDist.getCell('A1');
+        distTitle.value = 'Distribución de frases por radio';
+        distTitle.font = { name: 'Arial', size: 14, bold: true };
+        distTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+
+        // Selecciones aplicadas (usadas para construir la tabla y el gráfico)
+        const selectedPhrasesForExcel = (chartPhrases.length > 0 ? chartPhrases : chartPhrasesToShow);
+        const selectedRadiosForExcel = (chartRadios.length > 0 ? chartRadios : chartRadiosToShow);
+
+        // Construir tabla cruzada: Frases (filas) x Radios (columnas) + Total
+        const headerValues = ['Frase', ...selectedRadiosForExcel, 'Total'];
+        const headerRow = sheetDist.getRow(3);
+        headerRow.values = headerValues;
+        headerRow.font = { bold: true, color: { argb: 'FF000000' } };
+        headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+        headerRow.commit();
+
+        sheetDist.getColumn(1).width = 25;
+        for (let i = 2; i <= selectedRadiosForExcel.length + 1; i++) {
+            sheetDist.getColumn(i).width = 12;
+        }
+        sheetDist.getColumn(selectedRadiosForExcel.length + 2).width = 12;
+
+        selectedPhrasesForExcel.forEach((phrase) => {
+            const counts = selectedRadiosForExcel.map(radio => (phraseRadioCounts[phrase]?.[radio] || 0));
+            const total = counts.reduce((acc, n) => acc + (n || 0), 0);
+            sheetDist.addRow([phrase, ...counts, total]).commit();
+        });
+
+        const imageId3 = workbook.addImage({
+            base64: dataUrl3.split(',')[1],
+            extension: 'png',
+        });
+        const chartStartRow = 5 + selectedPhrasesForExcel.length + 2;
+        sheetDist.addImage(imageId3, {
+            tl: { col: 0, row: chartStartRow },
+            ext: { width: 700, height: 300 }
+        });
+
         // --- Sheet 2: Detalle de Coincidencias ---
         const sheetData = workbook.addWorksheet('Detalle de Coincidencias');
         
@@ -525,14 +572,14 @@ export default function SummaryDetailPage() {
         ];
 
         // Style Header
-        const headerRow = sheetData.getRow(1);
-        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        headerRow.fill = {
+        const dataHeaderRow = sheetData.getRow(1);
+        dataHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        dataHeaderRow.fill = {
             type: 'pattern',
             pattern: 'solid',
             fgColor: { argb: 'FF16A34A' } // Green-600
         };
-        headerRow.commit();
+        dataHeaderRow.commit();
 
         // Data Rows
         Object.entries(groupedData).forEach(([radioName, audioGroups]) => {
@@ -1290,7 +1337,7 @@ export default function SummaryDetailPage() {
             <h4 className="text-base font-bold text-gray-800 mb-3 text-center">
               Distribución de frases por radio
             </h4>
-            <div className="w-full h-[300px]">
+            <div className="w-full h-[300px]" id="print-chart-bars">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={phraseRadioBarData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
