@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Plus, Radio as RadioIcon, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Radio as RadioIcon, Trash2, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { RunPodControl } from '@/components/RunPodControl';
 import Swal from 'sweetalert2';
@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newRadio, setNewRadio] = useState({ name: '', address: '', url: '' });
   const [userRole, setUserRole] = useState<string>('');
+  const [creatingRadio, setCreatingRadio] = useState(false);
 
   useEffect(() => {
     fetchRadios();
@@ -171,6 +172,49 @@ export default function DashboardPage() {
     }
   };
 
+  const handleCreateRadio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      toast.error('No tienes permiso para crear radios.');
+      return;
+    }
+
+    if (!newRadio.name.trim() || !newRadio.address.trim()) {
+      toast.error('Nombre y dirección son obligatorios.');
+      return;
+    }
+
+    setCreatingRadio(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('No hay sesión activa');
+        return;
+      }
+
+      const res = await fetch('/api/radios/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(newRadio)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al crear radio');
+
+      toast.success('Radio creada correctamente');
+      setShowCreate(false);
+      setNewRadio({ name: '', address: '', url: '' });
+      fetchRadios();
+    } catch (error: any) {
+      toast.error(error.message || 'Error al crear radio');
+    } finally {
+      setCreatingRadio(false);
+    }
+  };
+
   if (loading) return <div className="flex justify-center p-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
 
   return (
@@ -183,6 +227,15 @@ export default function DashboardPage() {
         
         <div className="flex gap-3">
           <RunPodControl />
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Agregar Radio
+            </button>
+          )}
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -246,6 +299,63 @@ export default function DashboardPage() {
             ))
         )}
       </div>
+
+      {showCreate && (userRole === 'super_admin' || userRole === 'admin') && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Agregar Radio manualmente</h2>
+            <form onSubmit={handleCreateRadio} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Nombre de la Radio</label>
+                <input
+                  type="text"
+                  required
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
+                  value={newRadio.name}
+                  onChange={e => setNewRadio(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Dirección</label>
+                <input
+                  type="text"
+                  required
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
+                  value={newRadio.address}
+                  onChange={e => setNewRadio(prev => ({ ...prev, address: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">URL (opcional)</label>
+                <input
+                  type="text"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
+                  value={newRadio.url}
+                  onChange={e => setNewRadio(prev => ({ ...prev, url: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate(false); setNewRadio({ name: '', address: '', url: '' }); }}
+                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingRadio}
+                  className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {creatingRadio && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Crear Radio
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
